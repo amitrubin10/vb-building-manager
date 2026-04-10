@@ -974,6 +974,74 @@ function analyzeData() {
 }
 
 // ==================== MATCHING LOGIC ====================
+
+// Compound last-name prefixes in Hebrew
+const COMPOUND_PREFIXES = ['בן', 'בת', 'אל', 'אבו', 'מי', 'בר'];
+
+function extractLastName(name) {
+  // Returns the full compound last name, e.g. "בן דוד", "אל על", "מי-רז"
+  if (!name) return '';
+  const clean = name.replace(/\(.*?\)/g, '').trim();
+  // Remove leading first names connected with "ו" - split by spaces
+  const parts = clean.split(/\s+/).filter(p => p && p !== 'ו' && p !== '-');
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+  // Check if second-to-last word is a compound prefix
+  const lastTwo = parts.slice(-2);
+  const secondToLast = lastTwo[0].replace(/-/g, '');
+  if (COMPOUND_PREFIXES.includes(secondToLast)) {
+    return lastTwo.join(' '); // e.g. "בן דוד"
+  }
+  // Check for hyphenated compound like "מי-רז"
+  const last = parts[parts.length - 1];
+  if (last.includes('-')) return last; // e.g. "מי-רז"
+  return last;
+}
+
+function extractAllNameVariants(name) {
+  // Returns an array of name fragments to search for in bank descriptions
+  if (!name) return [];
+  const clean = name.replace(/\(.*?\)/g, '').trim();
+  const variants = [];
+
+  // Full compound last name
+  const lastName = extractLastName(clean);
+  if (lastName && lastName.length > 2) variants.push(lastName);
+
+  // Also add hyphenated version: "בן דוד" -> "בן-דוד"
+  if (lastName.includes(' ')) {
+    variants.push(lastName.replace(/\s+/g, '-'));
+    // Also each part if long enough on its own AND combined
+    // e.g. for "בן שמחון" also match "שמחון" alone (it's unique enough)
+    const lastParts = lastName.split(/\s+/);
+    const mainPart = lastParts[lastParts.length - 1];
+    if (mainPart.length > 3) variants.push(mainPart);
+  }
+
+  // Also add dehyphenated: "מי-רז" -> "מי רז"
+  if (lastName.includes('-')) {
+    variants.push(lastName.replace(/-/g, ' '));
+    variants.push(lastName.replace(/-/g, ''));
+  }
+
+  // Individual name parts (first names) for supplementary matching
+  const allParts = clean.split(/\s+/).filter(p => p && p !== 'ו' && p.length > 2);
+  allParts.forEach(p => {
+    if (!variants.includes(p) && p.length > 3) variants.push(p);
+  });
+
+  return [...new Set(variants)];
+}
+
+function normalizeDesc(desc) {
+  // Normalize bank description for matching:
+  // Remove common prefixes: "העברה מ", "הו"ק מ", "הע. ל", etc.
+  let d = desc;
+  // The bank often prefixes with מ (from) attached to the name
+  // e.g. "מבן-דוד" -> we want to match "בן-דוד"
+  return d;
+}
+
 function matchTransactionToTenant(tx) {
   const desc = tx.description;
   let bestMatch = null;
@@ -988,30 +1056,51 @@ function matchTransactionToTenant(tx) {
     const aptPattern = new RegExp('(?:דירה|דירת)\\s*' + escapeRegex(tenant.aptNum) + '(?:\\s|$|[^\\d])', 'i');
     const hasAptMatch = aptPattern.test(desc);
 
-    // Check name matches
-    const lastNameOwner = getLastName(tenant.ownerName);
-    const lastNameRenter = tenant.renterName ? getLastName(tenant.renterName) : '';
-    const firstNamesOwner = getFirstNames(tenant.ownerName);
+    // Get all name variants for owner
+    const ownerVariants = extractAllNameVariants(tenant.ownerName);
+    const renterVariants = tenant.renterName ? extractAllNameVariants(tenant.renterName) : [];
+    const allVariants = [...ownerVariants, ...renterVariants];
 
     let nameScore = 0;
     let matchedName = '';
 
-    // Full last name match (strong signal)
-    if (lastNameOwner && lastNameOwner.length > 2 && desc.includes(lastNameOwner)) {
-      nameScore = 60;
-      matchedName = lastNameOwner;
+    // Check each variant against description
+    for (const variant of allVariants) {
+      if (variant.length < 3) continue;
+
+      // Direct match
+      if (desc.includes(variant)) {
+        const score = variant.length >= 5 ? 65 : variant.length >= 4 ? 55 : 40;
+        if (score > nameScore) {
+          nameScore = score;
+          matchedName = variant;
+        }
+        continue;
+      }
+
+      // Bank often prefixes "מ" to the name: "מבן-דוד", "מניומן", "מאוסלנדר"
+      // Check if desc contains "מ" + variant (with optional hyphen/space variations)
+      const mVariant = 'מ' + variant;
+      const mVariantHyphen = 'מ' + variant.replace(/\s+/g, '-');
+      const mVariantNoSpace = 'מ' + variant.replace(/[\s-]+/g, '');
+
+      if (desc.includes(mVariant) || desc.includes(mVariantHyphen) || desc.includes(mVariantNoSpace)) {
+        const score = variant.length >= 5 ? 65 : variant.length >= 4 ? 55 : 40;
+        if (score > nameScore) {
+          nameScore = score;
+          matchedName = variant;
+        }
+      }
     }
 
-    // Check renter last name
-    if (lastNameRenter && lastNameRenter.length > 2 && desc.includes(lastNameRenter)) {
-      if (nameScore < 60) { nameScore = 55; matchedName = lastNameRenter; }
-    }
-
-    // Check first names for additional confidence
-    for (const fn of firstNamesOwner) {
-      if (fn.length > 2 && desc.includes(fn)) {
-        nameScore = Math.min(nameScore + 20, 80);
-        if (!matchedName) matchedName = fn;
+    // Additional: check compound last name with "מ" prefix attached
+    // e.g. owner="בן דוד" -> bank has "מבן-דוד" -> extract "בן-דוד" after "מ"
+    const compoundLast = extractLastName(tenant.ownerName);
+    if (compoundLast && compoundLast.includes(' ')) {
+      // "בן דוד" -> try "בן-דוד" in desc
+      const hyphenated = compoundLast.replace(/\s+/g, '-');
+      if (desc.includes(hyphenated) || desc.includes('מ' + hyphenated)) {
+        if (nameScore < 65) { nameScore = 65; matchedName = compoundLast; }
       }
     }
 
@@ -1020,17 +1109,20 @@ function matchTransactionToTenant(tx) {
       nameScore += 30;
     }
 
-    // If both name and apartment match - very high confidence
+    // Determine confidence level
     if (nameScore >= 70) {
       confidence = 95;
       detail = 'התאמת שם + דירה';
-    } else if (nameScore >= 55) {
+    } else if (nameScore >= 60) {
       confidence = 80;
+      detail = 'התאמת שם: ' + matchedName;
+    } else if (nameScore >= 50) {
+      confidence = 70;
       detail = 'התאמת שם משפחה: ' + matchedName;
     } else if (nameScore >= 40) {
       confidence = 60;
       detail = 'התאמה חלקית: ' + matchedName;
-    } else if (hasAptMatch && nameScore >= 20) {
+    } else if (hasAptMatch) {
       confidence = 50;
       detail = 'התאמת מספר דירה';
     } else if (nameScore >= 20) {
@@ -1045,7 +1137,6 @@ function matchTransactionToTenant(tx) {
     }
   }
 
-  // Only return match if confidence is reasonable
   if (bestConfidence >= 35) {
     return { tenant: bestMatch, confidence: bestConfidence, details: matchDetails };
   }
@@ -1053,10 +1144,7 @@ function matchTransactionToTenant(tx) {
 }
 
 function getLastName(name) {
-  if (!name) return '';
-  const clean = name.replace(/\(.*?\)/g, '').replace(/\s*ו\s*/g, ' ').trim();
-  const parts = clean.split(/\s+/).filter(p => p.length > 1);
-  return parts.length > 0 ? parts[parts.length - 1] : '';
+  return extractLastName(name);
 }
 
 function getFirstNames(name) {
