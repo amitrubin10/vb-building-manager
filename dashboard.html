@@ -759,7 +759,11 @@ let tenantsData = [];
 let collectionResults = [];
 let expensesResults = [];
 let forecastData = {};
+let splitAssignments = {}; // { "ref_1234_2026-3": [ {aptNum:"1", amount:770}, ... ] }
 let charts = {};
+
+// Keywords identifying aggregated credit-card payments
+const AGGREGATOR_KEYWORDS = ['גרואו', 'פיימ', 'grow', 'payment', 'סליקה', 'אשראי מרוכז'];
 
 const MONTHS_HEB = ['', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 
@@ -783,6 +787,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('headerDate').textContent = new Date().toLocaleDateString('he-IL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   loadTenantsFromStorage();
   loadForecastFromStorage();
+  loadSplitsFromStorage();
 });
 
 // ==================== FILE HANDLING ====================
@@ -957,6 +962,26 @@ function loadForecastFromStorage() {
     const data = localStorage.getItem('vaad_forecast');
     if (data) forecastData = JSON.parse(data);
   } catch(e) {}
+}
+
+function saveSplitsToStorage() {
+  try { localStorage.setItem('vaad_splits', JSON.stringify(splitAssignments)); } catch(e) {}
+}
+
+function loadSplitsFromStorage() {
+  try {
+    const data = localStorage.getItem('vaad_splits');
+    if (data) splitAssignments = JSON.parse(data);
+  } catch(e) {}
+}
+
+function isAggregatorTx(tx) {
+  const d = tx.description.toLowerCase();
+  return tx.amount > 0 && AGGREGATOR_KEYWORDS.some(kw => d.includes(kw));
+}
+
+function getSplitKey(tx) {
+  return tx.reference.trim() + '_' + tx.year + '-' + tx.month + '_' + tx.amount;
 }
 
 // ==================== RENDER ENGINE ====================
@@ -1163,18 +1188,49 @@ function analyzeCollection() {
 
   for (const month of months) {
     for (const tenant of tenantsData) {
-      // Skip non-apartment entries that are ועד בית
       const isSpecial = tenant.aptNum === 'מחסן ועד' || tenant.aptNum === 'שכירות חניה';
 
-      // Find matching transactions for this tenant in this month
+      // 1) Find direct matching transactions for this tenant in this month
       const incomeTxs = bankData.filter(tx => {
         if (tx.amount <= 0) return false;
         if (tx.month !== month.m || tx.year !== month.y) return false;
+        if (isAggregatorTx(tx)) return false; // Skip aggregator txs - handled separately
         const match = matchTransactionToTenant(tx);
         return match && match.tenant === tenant;
       });
 
-      const totalPaid = incomeTxs.reduce((s, tx) => s + tx.amount, 0);
+      const txDetails = incomeTxs.map(tx => {
+        const match = matchTransactionToTenant(tx);
+        return {
+          date: tx.dateStr,
+          amount: tx.amount,
+          desc: tx.description,
+          confidence: match ? match.confidence : 0,
+          details: match ? match.details : ''
+        };
+      });
+
+      // 2) Add amounts from split assignments (aggregator payments)
+      let splitTotal = 0;
+      const aggregatorTxs = bankData.filter(tx => isAggregatorTx(tx) && tx.month === month.m && tx.year === month.y);
+      for (const aggTx of aggregatorTxs) {
+        const key = getSplitKey(aggTx);
+        const splits = splitAssignments[key] || [];
+        for (const sp of splits) {
+          if (sp.aptNum === tenant.aptNum && sp.amount > 0) {
+            splitTotal += sp.amount;
+            txDetails.push({
+              date: aggTx.dateStr,
+              amount: sp.amount,
+              desc: aggTx.description + ' (פיצול ידני)',
+              confidence: 100,
+              details: 'שיוך ידני מסליקה'
+            });
+          }
+        }
+      }
+
+      const totalPaid = incomeTxs.reduce((s, tx) => s + tx.amount, 0) + splitTotal;
       const expected = tenant.monthlyPayment;
 
       let status, statusClass;
@@ -1191,17 +1247,6 @@ function analyzeCollection() {
         status = 'שילם ביתר';
         statusClass = 'badge-info';
       }
-
-      const txDetails = incomeTxs.map(tx => {
-        const match = matchTransactionToTenant(tx);
-        return {
-          date: tx.dateStr,
-          amount: tx.amount,
-          desc: tx.description,
-          confidence: match ? match.confidence : 0,
-          details: match ? match.details : ''
-        };
-      });
 
       const maxConfidence = txDetails.length > 0 ? Math.max(...txDetails.map(t => t.confidence)) : 0;
 
@@ -1442,14 +1487,25 @@ function renderAllTxTable(data) {
 
   data.forEach(tx => {
     const tr = document.createElement('tr');
+    const isAgg = isAggregatorTx(tx);
+    const splitKey = getSplitKey(tx);
+    const hasSplits = splitAssignments[splitKey] && splitAssignments[splitKey].length > 0;
+    const splitBtnHtml = isAgg ?
+      `<div style="margin-top:4px;">
+        <span class="badge ${hasSplits ? 'badge-success' : 'badge-warning'}" style="cursor:pointer;" onclick="openSplitPanel('${splitKey.replace(/'/g,"\\'")}', '${tx.dateStr}', ${tx.amount}, '${tx.description.replace(/'/g,"\\'")}')">
+          ${hasSplits ? '✓ שויך — ערוך' : '💳 פצל לדירות'}
+        </span>
+      </div>` : '';
+
     tr.innerHTML = `
       <td>${tx.dateStr}</td>
-      <td style="white-space:normal;max-width:400px;">${tx.description}</td>
+      <td style="white-space:normal;max-width:400px;">${tx.description}${splitBtnHtml}</td>
       <td class="${tx.amount >= 0 ? 'amount-positive' : 'amount-negative'}">${formatCurrency(tx.amount)}</td>
       <td>${formatCurrency(tx.balance)}</td>
       <td>${tx.reference}</td>
       <td>${tx.channel}</td>
     `;
+    if (isAgg) tr.style.background = 'rgba(139,92,246,0.06)';
     tbody.appendChild(tr);
   });
 }
@@ -1818,6 +1874,99 @@ function openExpCatDrilldown(category) {
 function closeDrilldown() {
   document.getElementById('drilldownOverlay').classList.remove('active');
   document.body.style.overflow = '';
+}
+
+// ==================== SPLIT AGGREGATOR PAYMENTS ====================
+function openSplitPanel(splitKey, dateStr, totalAmount, description) {
+  const overlay = document.getElementById('drilldownOverlay');
+  document.getElementById('drilldownTitle').textContent = '💳 פיצול תשלום סליקה לדירות';
+  document.getElementById('drilldownSubtitle').textContent = dateStr + ' | ' + description + ' | סכום כולל: ' + formatCurrency(totalAmount);
+
+  const existing = splitAssignments[splitKey] || [];
+
+  // Build summary
+  const assignedTotal = existing.reduce((s, sp) => s + (parseFloat(sp.amount) || 0), 0);
+  const remaining = totalAmount - assignedTotal;
+
+  document.getElementById('drilldownSummary').innerHTML = `
+    <div class="drilldown-stat">
+      <div class="stat-label">סכום כולל</div>
+      <div class="stat-value" style="color:var(--accent-light)">${formatCurrency(totalAmount)}</div>
+    </div>
+    <div class="drilldown-stat">
+      <div class="stat-label">שויך לדירות</div>
+      <div class="stat-value amount-positive" id="splitAssignedTotal">${formatCurrency(assignedTotal)}</div>
+    </div>
+    <div class="drilldown-stat">
+      <div class="stat-label">נותר לשיוך</div>
+      <div class="stat-value" id="splitRemaining" style="color:${remaining > 0.5 ? 'var(--warning)' : 'var(--success)'}">${formatCurrency(remaining)}</div>
+    </div>
+  `;
+
+  // Build assignment form
+  let html = '<div style="padding:20px 28px;">';
+  html += '<div style="margin-bottom:16px;font-size:13px;color:var(--text-secondary);">הזן סכום ליד כל דירה שביצעה תשלום באשראי בתוך הסכום הזה. לחץ "שמור" בתחתית.</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;" id="splitGrid">';
+
+  for (const tenant of tenantsData) {
+    if (tenant.aptNum === 'מחסן ועד' || tenant.aptNum === 'שכירות חניה') continue;
+    const existingAmt = existing.find(s => s.aptNum === tenant.aptNum);
+    const val = existingAmt ? existingAmt.amount : '';
+    const isActive = val > 0;
+    html += `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${isActive ? 'rgba(16,185,129,0.08)' : 'var(--bg-card)'};border:1px solid ${isActive ? 'var(--success)' : 'var(--border)'};border-radius:8px;">
+        <span style="min-width:32px;font-weight:700;color:var(--accent-light);">${tenant.aptNum}</span>
+        <span style="flex:1;font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${tenant.ownerName}">${tenant.ownerName}</span>
+        <span style="font-size:10px;color:var(--text-muted);">(${formatCurrency(tenant.monthlyPayment)})</span>
+        <input type="number" step="0.01" min="0" placeholder="0"
+          value="${val}"
+          data-apt="${tenant.aptNum}"
+          style="width:85px;background:var(--bg-input);border:1px solid var(--border);color:var(--text-primary);padding:5px 8px;border-radius:6px;font-family:Heebo;font-size:13px;text-align:left;direction:ltr;"
+          oninput="updateSplitTotals('${splitKey.replace(/'/g,"\\'")}', ${totalAmount})">
+      </div>`;
+  }
+
+  html += '</div>';
+  html += `<div style="margin-top:20px;display:flex;gap:12px;justify-content:center;">
+    <button onclick="saveSplits('${splitKey.replace(/'/g,"\\'")}', ${totalAmount})" style="padding:10px 32px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-family:Heebo;font-size:14px;font-weight:600;cursor:pointer;">שמור שיוכים</button>
+    <button onclick="closeDrilldown()" style="padding:10px 32px;background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);border-radius:8px;font-family:Heebo;font-size:14px;cursor:pointer;">ביטול</button>
+  </div>`;
+  html += '</div>';
+
+  document.getElementById('drilldownBody').innerHTML = html;
+  overlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function updateSplitTotals(splitKey, totalAmount) {
+  const inputs = document.querySelectorAll('#splitGrid input[data-apt]');
+  let sum = 0;
+  inputs.forEach(inp => { sum += parseFloat(inp.value) || 0; });
+  const remaining = totalAmount - sum;
+  const elAssigned = document.getElementById('splitAssignedTotal');
+  const elRemaining = document.getElementById('splitRemaining');
+  if (elAssigned) elAssigned.textContent = formatCurrency(sum);
+  if (elRemaining) {
+    elRemaining.textContent = formatCurrency(remaining);
+    elRemaining.style.color = remaining > 0.5 ? 'var(--warning)' : remaining < -0.5 ? 'var(--danger)' : 'var(--success)';
+  }
+}
+
+function saveSplits(splitKey, totalAmount) {
+  const inputs = document.querySelectorAll('#splitGrid input[data-apt]');
+  const splits = [];
+  inputs.forEach(inp => {
+    const amt = parseFloat(inp.value) || 0;
+    if (amt > 0) {
+      splits.push({ aptNum: inp.dataset.apt, amount: amt });
+    }
+  });
+  splitAssignments[splitKey] = splits;
+  saveSplitsToStorage();
+  closeDrilldown();
+  // Re-analyze and re-render
+  analyzeData();
+  applyFilters();
 }
 
 document.addEventListener('keydown', function(e) {
