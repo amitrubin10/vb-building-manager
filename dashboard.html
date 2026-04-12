@@ -1492,6 +1492,8 @@ function autoDetectColumns(header) {
 }
 
 function showMappingDialog(header, col, sampleRow) {
+  _pendingFileType = 'tenants'; // Mark as tenants mapping
+  _pendingFileRaw = _pendingTenantsRaw;
   const fields = [
     { key: 'apt', label: 'מספר דירה', required: true },
     { key: 'owner', label: 'שם בעל הדירה', required: true },
@@ -1533,23 +1535,27 @@ function confirmMapping() {
     _pendingFileRaw = null;
     tryRender();
   } else if (_pendingFileType === 'credit_hombi' || _pendingFileType === 'credit_standard') {
+    _pendingFileRaw._isHombi = _pendingFileType === 'credit_hombi';
     finalizeCreditParse(_pendingFileRaw, col);
     _pendingFileRaw = null;
     tryRender();
-  } else {
-    // Tenants
+  } else if (_pendingFileType === 'tenants') {
     if (col.apt === -1 || col.owner === -1 || col.payment === -1) {
       alert('יש לבחור לפחות את העמודות: מספר דירה, שם בעל הדירה, תשלום חודשי');
       return;
     }
-    finalizeTenantsParse(_pendingTenantsRaw, col);
-    if (_pendingTenantsSaveRaw) {
-      saveTenantsToStorage(_pendingTenantsRaw);
+    finalizeTenantsParse(_pendingTenantsRaw || _pendingFileRaw, col);
+    const rawToSave = _pendingTenantsRaw || _pendingFileRaw;
+    if (_pendingTenantsSaveRaw || rawToSave) {
+      saveTenantsToStorage(rawToSave);
       document.getElementById('tenantsUploadStatus').className = 'upload-status success';
+      document.getElementById('tenantsUploadStatus').textContent = 'נטען ונשמר';
       document.getElementById('tenantsUploadBox').classList.add('loaded');
       document.getElementById('clearTenantsBtn').classList.remove('hidden');
       _pendingTenantsSaveRaw = null;
     }
+    _pendingFileRaw = null;
+    _pendingTenantsRaw = null;
     tryRender();
   }
 }
