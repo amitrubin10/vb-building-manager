@@ -919,12 +919,8 @@ function handleBankUpload(event) {
       const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
-      parseBankData(raw);
-      document.getElementById('bankUploadStatus').className = 'upload-status success';
-      document.getElementById('bankUploadStatus').textContent = file.name + ' נטען בהצלחה';
-      document.getElementById('bankUploadBox').classList.add('loaded');
-      document.getElementById('headerStatus').textContent = 'נתונים נטענו';
-      tryRender();
+      document.getElementById('bankUploadStatus').textContent = file.name;
+      initBankMapping(raw);
     } catch(err) {
       alert('שגיאה בקריאת קובץ הבנק: ' + err.message);
     }
@@ -1042,22 +1038,16 @@ async function fetchFromDrive(inputId, target) {
     });
 
     if (target === 'bank') {
-      parseBankData(raw);
-      statusEl.className = 'upload-status success';
-      statusEl.textContent = 'נטען מדרייב בהצלחה';
-      document.getElementById(boxMap[target]).classList.add('loaded');
-      document.getElementById('headerStatus').textContent = 'נתונים נטענו';
+      initBankMapping(raw);
+      return;
     } else if (target === 'credit') {
-      parseCreditData(raw);
-      statusEl.className = 'upload-status success';
-      statusEl.textContent = 'נטען מדרייב בהצלחה';
-      document.getElementById(boxMap[target]).classList.add('loaded');
+      initCreditMapping(raw);
+      return;
     } else if (target === 'tenants') {
       _pendingTenantsSaveRaw = raw;
       statusEl.textContent = 'נטען מדרייב...';
       parseTenantsData(raw);
-      // Note: save + render happens in confirmMapping()
-      return; // Don't tryRender yet — wait for confirmation
+      return;
     }
     tryRender();
   } catch(err) {
@@ -1076,11 +1066,8 @@ function handleCreditUpload(event) {
       const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
-      parseCreditData(raw);
-      document.getElementById('creditUploadStatus').className = 'upload-status success';
-      document.getElementById('creditUploadStatus').textContent = file.name + ' נטען בהצלחה';
-      document.getElementById('creditUploadBox').classList.add('loaded');
-      tryRender();
+      document.getElementById('creditUploadStatus').textContent = file.name;
+      initCreditMapping(raw);
     } catch(err) {
       alert('שגיאה בקריאת קובץ האשראי: ' + err.message);
     }
@@ -1088,41 +1075,222 @@ function handleCreditUpload(event) {
   reader.readAsArrayBuffer(file);
 }
 
-function parseBankData(raw) {
-  bankData = [];
+// ==================== UNIVERSAL FILE MAPPING ====================
+let _pendingFileRaw = null;
+let _pendingFileType = null; // 'bank' or 'credit'
+
+function showUniversalMapping(fileType, title, fields, header, sampleRow, autoCol) {
+  _pendingFileType = fileType;
+
+  let html = '';
+  for (const f of fields) {
+    const options = ['<option value="-1"' + (autoCol[f.key] === -1 ? ' selected' : '') + '>' + (f.required ? '— בחר —' : 'לא קיים') + '</option>'];
+    for (let j = 0; j < header.length; j++) {
+      const preview = sampleRow && sampleRow[j] != null ? String(sampleRow[j]).substring(0, 25) : '';
+      const selected = autoCol[f.key] === j ? ' selected' : '';
+      options.push('<option value="' + j + '"' + selected + '>' + header[j] + (preview ? ' (' + preview + ')' : '') + '</option>');
+    }
+    html += '<div class="mapping-row"><label>' + f.label + (f.required ? ' *' : '') + '</label>' +
+      '<select id="map_' + f.key + '">' + options.join('') + '</select></div>';
+  }
+
+  document.getElementById('mappingFields').innerHTML = html;
+  document.querySelector('.mapping-panel h2').textContent = '⚙ ' + title;
+  document.querySelector('.mapping-panel .map-sub').textContent = 'המערכת זיהתה את העמודות הבאות. אשר או תקן:';
+  document.getElementById('mappingOverlay').classList.add('active');
+}
+
+// ---- Bank mapping ----
+function initBankMapping(raw) {
+  _pendingFileRaw = raw;
+  // Find header row
   let headerIdx = -1;
-  for (let i = 0; i < raw.length; i++) {
-    if (raw[i] && raw[i][0] && String(raw[i][0]).includes('תאריך')) {
-      headerIdx = i;
-      break;
+  for (let i = 0; i < Math.min(raw.length, 15); i++) {
+    if (raw[i] && raw[i].some(c => String(c||'').includes('תאריך'))) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) { headerIdx = 0; }
+  const header = raw[headerIdx].map(c => String(c || '').trim());
+  const sample = raw[headerIdx + 1] || [];
+  _pendingFileRaw._headerIdx = headerIdx;
+
+  // Auto-detect
+  const col = { date: -1, desc: -1, amount: -1, balance: -1, reference: -1, channel: -1 };
+  const kw = {
+    date: ['תאריך', 'date'],
+    desc: ['תיאור', 'פרטים', 'תנועה', 'description'],
+    amount: ['זכות/חובה', 'סכום', 'זכות', 'חובה', 'amount'],
+    balance: ['יתרה', 'balance'],
+    reference: ['אסמכתה', 'אסמכת', 'reference'],
+    channel: ['ערוץ', 'channel']
+  };
+  for (const [field, words] of Object.entries(kw)) {
+    for (const w of words) {
+      const idx = header.findIndex(h => h.includes(w));
+      if (idx >= 0 && col[field] === -1) { col[field] = idx; break; }
     }
   }
-  if (headerIdx === -1) return;
+
+  showUniversalMapping('bank', 'זיהוי עמודות קובץ בנק', [
+    { key: 'date', label: 'תאריך', required: true },
+    { key: 'desc', label: 'תיאור תנועה', required: true },
+    { key: 'amount', label: 'סכום (זכות/חובה)', required: true },
+    { key: 'balance', label: 'יתרה', required: false },
+    { key: 'reference', label: 'אסמכתה', required: false },
+    { key: 'channel', label: 'ערוץ ביצוע', required: false }
+  ], header, sample, col);
+}
+
+function finalizeBankParse(raw, col) {
+  bankData = [];
+  const headerIdx = raw._headerIdx || 0;
   for (let i = headerIdx + 1; i < raw.length; i++) {
     const row = raw[i];
-    if (!row || !row[0]) continue;
-    let dateVal = parseDate(row[0]);
+    if (!row) continue;
+    const dateVal = col.date >= 0 ? parseDate(row[col.date]) : null;
     if (!dateVal) continue;
-    const amount = parseFloat(String(row[3]).replace(/[^\d.\-]/g, '')) || 0;
-    const balance = parseFloat(String(row[4]).replace(/[^\d.\-]/g, '')) || 0;
+    const amount = col.amount >= 0 ? (parseFloat(String(row[col.amount] || '0').replace(/[^\d.\-]/g, '')) || 0) : 0;
+    const balance = col.balance >= 0 ? (parseFloat(String(row[col.balance] || '0').replace(/[^\d.\-]/g, '')) || 0) : 0;
     bankData.push({
       date: dateVal,
       dateStr: formatDate(dateVal),
-      description: String(row[2] || '').trim(),
+      description: col.desc >= 0 ? String(row[col.desc] || '').trim() : '',
       amount: amount,
       balance: balance,
-      reference: String(row[5] || '').trim(),
-      fee: String(row[6] || '').trim(),
-      channel: String(row[7] || '').trim(),
+      reference: col.reference >= 0 ? String(row[col.reference] || '').trim() : '',
+      fee: '',
+      channel: col.channel >= 0 ? String(row[col.channel] || '').trim() : '',
       month: dateVal.getMonth() + 1,
       year: dateVal.getFullYear(),
       source: 'bank'
     });
   }
   bankData.sort((a, b) => b.date - a.date);
+  document.getElementById('bankUploadStatus').className = 'upload-status success';
+  document.getElementById('bankUploadStatus').textContent = 'נטען בהצלחה (' + bankData.length + ' תנועות)';
+  document.getElementById('bankUploadBox').classList.add('loaded');
+  document.getElementById('headerStatus').textContent = 'נתונים נטענו';
 }
 
-function parseCreditData(raw) {
+// ---- Credit mapping ----
+function initCreditMapping(raw) {
+  _pendingFileRaw = raw;
+  // Detect: Hombi format (has "חודשים") or standard transactions (has "תאריך")
+  let headerIdx = -1;
+  let isHombi = false;
+  for (let i = 0; i < Math.min(raw.length, 15); i++) {
+    if (!raw[i]) continue;
+    const rowStr = raw[i].map(c => String(c || '').trim());
+    if (rowStr.some(c => c.includes('חודשים'))) { headerIdx = i; isHombi = true; break; }
+    if (rowStr.some(c => c.includes('תאריך'))) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) headerIdx = 0;
+  const header = raw[headerIdx].map(c => String(c || '').trim());
+  const sample = raw[headerIdx + 1] || [];
+  _pendingFileRaw._headerIdx = headerIdx;
+  _pendingFileRaw._isHombi = isHombi;
+
+  if (isHombi) {
+    // Hombi summary format
+    const col = { apt: -1, name: -1, monthly: -1, months: -1 };
+    for (let j = 0; j < header.length; j++) {
+      const h = header[j];
+      if (col.apt === -1 && (h.includes('דירה'))) col.apt = j;
+      else if (col.name === -1 && h.includes('שם')) col.name = j;
+      else if (col.monthly === -1 && (h.includes('תשלום חודשי') || h.includes('חודשי'))) col.monthly = j;
+      else if (col.months === -1 && h.includes('חודשים')) col.months = j;
+    }
+    showUniversalMapping('credit_hombi', 'זיהוי עמודות קובץ אשראי (סיכום)', [
+      { key: 'apt', label: 'מספר דירה', required: true },
+      { key: 'name', label: 'שם', required: false },
+      { key: 'monthly', label: 'תשלום חודשי', required: true },
+      { key: 'months', label: 'חודשים ששולמו', required: true }
+    ], header, sample, col);
+  } else {
+    // Standard transaction format
+    const col = { date: -1, desc: -1, amount: -1 };
+    for (let j = 0; j < header.length; j++) {
+      const h = header[j];
+      if (col.date === -1 && h.includes('תאריך')) col.date = j;
+      else if (col.desc === -1 && (h.includes('תיאור') || h.includes('פרטים') || h.includes('שם'))) col.desc = j;
+      else if (col.amount === -1 && (h.includes('סכום') || h.includes('זכות'))) col.amount = j;
+    }
+    showUniversalMapping('credit_standard', 'זיהוי עמודות קובץ אשראי (תנועות)', [
+      { key: 'date', label: 'תאריך', required: true },
+      { key: 'desc', label: 'תיאור', required: true },
+      { key: 'amount', label: 'סכום', required: true }
+    ], header, sample, col);
+  }
+}
+
+function finalizeCreditParse(raw, col) {
+  creditData = [];
+  const headerIdx = raw._headerIdx || 0;
+  const isHombi = raw._isHombi || false;
+
+  const MONTH_MAP = {
+    'ינואר': 1, 'פברואר': 2, 'מרץ': 3, 'אפריל': 4,
+    'מאי': 5, 'יוני': 6, 'יולי': 7, 'אוגוסט': 8,
+    'ספטמבר': 9, 'אוקטובר': 10, 'נובמבר': 11, 'דצמבר': 12
+  };
+
+  if (isHombi) {
+    const currentYear = new Date().getFullYear();
+    for (let i = headerIdx + 1; i < raw.length; i++) {
+      const row = raw[i];
+      if (!row) continue;
+      const aptNum = String(Math.floor(parseFloat(row[col.apt]) || 0));
+      if (!aptNum || aptNum === '0' || aptNum === 'NaN') continue;
+      const tenantName = col.name >= 0 ? String(row[col.name] || '').trim() : '';
+      const monthlyAmount = col.monthly >= 0 ? (parseFloat(row[col.monthly]) || 0) : 0;
+      const monthsText = col.months >= 0 ? String(row[col.months] || '').trim() : '';
+      if (!monthsText || monthlyAmount === 0) continue;
+      let monthNumbers = [];
+      if (monthsText.includes('מלואו') || monthsText.includes('שנתי')) {
+        monthNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      } else {
+        const parts = monthsText.split(/[,،\s]+/).map(s => s.trim()).filter(s => s);
+        for (const part of parts) {
+          for (const [name, num] of Object.entries(MONTH_MAP)) {
+            if (part.includes(name)) { monthNumbers.push(num); break; }
+          }
+        }
+      }
+      for (const m of monthNumbers) {
+        creditData.push({
+          date: new Date(currentYear, m - 1, 1), dateStr: '1/' + m + '/' + currentYear,
+          description: 'אשראי — ' + tenantName + ' דירה ' + aptNum,
+          amount: monthlyAmount, balance: 0, reference: 'אשראי', fee: '', channel: 'אשראי',
+          month: m, year: currentYear, source: 'credit', creditAptNum: aptNum
+        });
+      }
+    }
+  } else {
+    for (let i = headerIdx + 1; i < raw.length; i++) {
+      const row = raw[i];
+      if (!row) continue;
+      const dateVal = col.date >= 0 ? parseDate(row[col.date]) : null;
+      if (!dateVal) continue;
+      let amount = col.amount >= 0 ? (parseFloat(String(row[col.amount] || '0').replace(/[^\d.\-]/g, '')) || 0) : 0;
+      if (amount === 0) continue;
+      amount = Math.abs(amount);
+      creditData.push({
+        date: dateVal, dateStr: formatDate(dateVal),
+        description: col.desc >= 0 ? String(row[col.desc] || '').trim() : '',
+        amount: amount, balance: 0, reference: '', fee: '', channel: 'אשראי',
+        month: dateVal.getMonth() + 1, year: dateVal.getFullYear(), source: 'credit'
+      });
+    }
+  }
+  creditData.sort((a, b) => b.date - a.date);
+  document.getElementById('creditUploadStatus').className = 'upload-status success';
+  document.getElementById('creditUploadStatus').textContent = 'נטען בהצלחה (' + creditData.length + ' תנועות)';
+  document.getElementById('creditUploadBox').classList.add('loaded');
+}
+
+// ---- Unified confirm handler ----
+function parseBankData(raw) { /* kept for localStorage compat */ }
+
+function parseCreditData(raw) { /* kept for compat — actual parsing in finalizeCreditParse */
   creditData = [];
 
   // Detect format: "Hombi summary" has columns: דירה, שם, תשלום חודשי, חודשים ששולמו, ...
@@ -1351,30 +1519,39 @@ function showMappingDialog(header, col, sampleRow) {
 }
 
 function confirmMapping() {
-  const col = {
-    apt: parseInt(document.getElementById('map_apt').value),
-    owner: parseInt(document.getElementById('map_owner').value),
-    payment: parseInt(document.getElementById('map_payment').value),
-    phone: parseInt(document.getElementById('map_phone').value),
-    renter: parseInt(document.getElementById('map_renter').value)
-  };
-
-  if (col.apt === -1 || col.owner === -1 || col.payment === -1) {
-    alert('יש לבחור לפחות את העמודות: מספר דירה, שם בעל הדירה, תשלום חודשי');
-    return;
-  }
+  // Read all select values from the dialog
+  const col = {};
+  document.querySelectorAll('#mappingFields select').forEach(sel => {
+    const key = sel.id.replace('map_', '');
+    col[key] = parseInt(sel.value);
+  });
 
   document.getElementById('mappingOverlay').classList.remove('active');
-  finalizeTenantsParse(_pendingTenantsRaw, col);
 
-  if (_pendingTenantsSaveRaw) {
-    saveTenantsToStorage(_pendingTenantsRaw);
-    document.getElementById('tenantsUploadStatus').className = 'upload-status success';
-    document.getElementById('tenantsUploadBox').classList.add('loaded');
-    document.getElementById('clearTenantsBtn').classList.remove('hidden');
-    _pendingTenantsSaveRaw = null;
+  if (_pendingFileType === 'bank') {
+    finalizeBankParse(_pendingFileRaw, col);
+    _pendingFileRaw = null;
+    tryRender();
+  } else if (_pendingFileType === 'credit_hombi' || _pendingFileType === 'credit_standard') {
+    finalizeCreditParse(_pendingFileRaw, col);
+    _pendingFileRaw = null;
+    tryRender();
+  } else {
+    // Tenants
+    if (col.apt === -1 || col.owner === -1 || col.payment === -1) {
+      alert('יש לבחור לפחות את העמודות: מספר דירה, שם בעל הדירה, תשלום חודשי');
+      return;
+    }
+    finalizeTenantsParse(_pendingTenantsRaw, col);
+    if (_pendingTenantsSaveRaw) {
+      saveTenantsToStorage(_pendingTenantsRaw);
+      document.getElementById('tenantsUploadStatus').className = 'upload-status success';
+      document.getElementById('tenantsUploadBox').classList.add('loaded');
+      document.getElementById('clearTenantsBtn').classList.remove('hidden');
+      _pendingTenantsSaveRaw = null;
+    }
+    tryRender();
   }
-  tryRender();
 }
 
 function cancelMapping() {
