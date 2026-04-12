@@ -184,6 +184,42 @@ body {
 .btn-drive:hover { opacity: 0.85; }
 .btn-drive:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* Column Mapping Dialog */
+.mapping-overlay {
+  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6); z-index: 600; backdrop-filter: blur(4px);
+  align-items: center; justify-content: center;
+}
+.mapping-overlay.active { display: flex; }
+.mapping-panel {
+  background: var(--bg-secondary); border: 1px solid var(--border-light);
+  border-radius: 16px; width: 90%; max-width: 600px; padding: 28px;
+  box-shadow: var(--shadow-lg); animation: drilldownIn 0.25s ease-out;
+}
+.mapping-panel h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.mapping-panel .map-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; }
+.mapping-row {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+.mapping-row label {
+  min-width: 120px; font-size: 13px; font-weight: 600; color: var(--text-primary); text-align: right;
+}
+.mapping-row select {
+  flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text-primary); padding: 8px 12px; border-radius: 8px;
+  font-family: 'Heebo', sans-serif; font-size: 13px;
+}
+.mapping-row .map-preview {
+  font-size: 11px; color: var(--text-muted); min-width: 120px; direction: ltr; text-align: left;
+}
+.mapping-btns { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+.mapping-btns button {
+  padding: 10px 28px; border-radius: 8px; font-family: 'Heebo', sans-serif;
+  font-size: 14px; font-weight: 600; cursor: pointer; border: none;
+}
+.btn-map-confirm { background: var(--accent); color: #fff; }
+.btn-map-cancel { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border) !important; }
+
 /* KPI Cards */
 .kpi-grid {
   display: grid;
@@ -805,6 +841,19 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
 
 </div>
 
+<!-- Column Mapping Dialog -->
+<div class="mapping-overlay" id="mappingOverlay">
+  <div class="mapping-panel">
+    <h2>&#9881; זיהוי עמודות קובץ דיירים</h2>
+    <div class="map-sub">המערכת זיהתה את העמודות הבאות. אשר או תקן:</div>
+    <div id="mappingFields"></div>
+    <div class="mapping-btns">
+      <button class="btn-map-confirm" onclick="confirmMapping()">&#10003; אישור</button>
+      <button class="btn-map-cancel" onclick="cancelMapping()">ביטול</button>
+    </div>
+  </div>
+</div>
+
 <!-- Drill-down Overlay -->
 <div class="drilldown-overlay" id="drilldownOverlay" onclick="if(event.target===this)closeDrilldown()">
   <div class="drilldown-panel">
@@ -892,13 +941,10 @@ function handleTenantsUpload(event) {
       const wb = XLSX.read(e.target.result, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      _pendingTenantsSaveRaw = raw;
+      document.getElementById('tenantsUploadStatus').textContent = file.name;
       parseTenantsData(raw);
-      saveTenantsToStorage(raw);
-      document.getElementById('tenantsUploadStatus').className = 'upload-status success';
-      document.getElementById('tenantsUploadStatus').textContent = file.name + ' נטען ונשמר';
-      document.getElementById('tenantsUploadBox').classList.add('loaded');
-      document.getElementById('clearTenantsBtn').classList.remove('hidden');
-      tryRender();
+      // Note: save + render happens in confirmMapping()
     } catch(err) {
       alert('שגיאה בקריאת קובץ הדיירים: ' + err.message);
     }
@@ -1007,13 +1053,11 @@ async function fetchFromDrive(inputId, target) {
       statusEl.textContent = 'נטען מדרייב בהצלחה';
       document.getElementById(boxMap[target]).classList.add('loaded');
     } else if (target === 'tenants') {
+      _pendingTenantsSaveRaw = raw;
+      statusEl.textContent = 'נטען מדרייב...';
       parseTenantsData(raw);
-      // Save to localStorage - we need the raw array
-      saveTenantsToStorage(raw);
-      statusEl.className = 'upload-status success';
-      statusEl.textContent = 'נטען מדרייב ונשמר';
-      document.getElementById(boxMap[target]).classList.add('loaded');
-      document.getElementById('clearTenantsBtn').classList.remove('hidden');
+      // Note: save + render happens in confirmMapping()
+      return; // Don't tryRender yet — wait for confirmation
     }
     tryRender();
   } catch(err) {
@@ -1220,44 +1264,150 @@ function parseDate(val) {
   return null;
 }
 
-function parseTenantsData(raw) {
-  tenantsData = [];
+// Pending tenants data for column mapping confirmation
+let _pendingTenantsRaw = null;
+let _pendingTenantsCol = null;
+let _pendingTenantsSaveRaw = null;
+
+function parseTenantsData(raw, skipConfirm) {
   if (!raw || raw.length < 2) return;
 
-  // Auto-detect columns by header names (universal for any building)
   const header = raw[0].map(c => String(c || '').trim());
-  let col = { apt: 0, payment: 1, owner: 3, phone: 5, renter: 7 }; // defaults
 
-  // Try to find columns by header keywords
-  // Use flags to only match FIRST occurrence (owner's phone, not renter's)
-  let foundApt = false, foundOwner = false, foundPayment = false, foundPhone = false, foundRenter = false;
-  for (let j = 0; j < header.length; j++) {
-    const h = header[j];
-    if (!foundApt && (h.includes('מספר דירה') || h === 'דירה')) { col.apt = j; foundApt = true; }
-    else if (!foundOwner && (h.includes('שם בעל') || h.includes('שם הדייר') || (h.includes('שם') && !h.includes('שוכר')))) { col.owner = j; foundOwner = true; }
-    else if (!foundPayment && (h.includes('תשלום חודשי') || h.includes('דמי ועד'))) { col.payment = j; foundPayment = true; }
-    else if (!foundPhone && (h.includes('טלפון נייד') || h === 'טלפון' || h === 'נייד' || h.includes('פלאפון')) && !h.includes('נוסף')) { col.phone = j; foundPhone = true; }
-    else if (!foundRenter && h.includes('שוכר')) { col.renter = j; foundRenter = true; }
+  // Smart auto-detect with scoring
+  const col = autoDetectColumns(header);
+
+  if (skipConfirm) {
+    // Direct parse without confirmation (used after user confirms)
+    finalizeTenantsParse(raw, col);
+    return;
   }
 
+  // Show confirmation dialog
+  _pendingTenantsRaw = raw;
+  _pendingTenantsCol = col;
+  showMappingDialog(header, col, raw[1]);
+}
+
+function autoDetectColumns(header) {
+  const col = { apt: -1, payment: -1, owner: -1, phone: -1, renter: -1 };
+  const keywords = {
+    apt: ['מספר דירה', 'דירה', 'מס דירה', 'apartment', 'apt'],
+    owner: ['שם בעל', 'שם הדייר', 'בעל הדירה', 'שם דייר', 'שם'],
+    payment: ['תשלום חודשי', 'דמי ועד', 'סכום חודשי', 'תשלום'],
+    phone: ['טלפון נייד', 'טלפון', 'נייד', 'פלאפון', 'סלולרי', 'phone'],
+    renter: ['שם שוכר', 'שוכר', 'דייר']
+  };
+
+  for (const [field, kws] of Object.entries(keywords)) {
+    for (const kw of kws) {
+      for (let j = 0; j < header.length; j++) {
+        const h = header[j].toLowerCase ? header[j] : String(header[j]);
+        if (h.includes(kw) && col[field] === -1) {
+          // Avoid matching "טלפון נוסף" for phone
+          if (field === 'phone' && h.includes('נוסף')) continue;
+          // Avoid matching "שם שוכר" for owner
+          if (field === 'owner' && h.includes('שוכר')) continue;
+          col[field] = j;
+        }
+      }
+      if (col[field] !== -1) break; // Found, stop searching this field
+    }
+  }
+
+  // Fallback defaults if nothing found
+  if (col.apt === -1) col.apt = 0;
+  if (col.payment === -1) col.payment = 1;
+  if (col.owner === -1) col.owner = header.length > 3 ? 3 : 2;
+
+  return col;
+}
+
+function showMappingDialog(header, col, sampleRow) {
+  const fields = [
+    { key: 'apt', label: 'מספר דירה', required: true },
+    { key: 'owner', label: 'שם בעל הדירה', required: true },
+    { key: 'payment', label: 'תשלום חודשי', required: true },
+    { key: 'phone', label: 'טלפון', required: false },
+    { key: 'renter', label: 'שם שוכר', required: false }
+  ];
+
+  let html = '';
+  for (const f of fields) {
+    const options = ['<option value="-1"' + (col[f.key] === -1 ? ' selected' : '') + '>' + (f.required ? '— בחר —' : 'לא קיים') + '</option>'];
+    for (let j = 0; j < header.length; j++) {
+      const preview = sampleRow && sampleRow[j] !== null && sampleRow[j] !== undefined ? String(sampleRow[j]).substring(0, 20) : '';
+      const selected = col[f.key] === j ? ' selected' : '';
+      options.push('<option value="' + j + '"' + selected + '>' + header[j] + (preview ? ' (' + preview + ')' : '') + '</option>');
+    }
+    html += '<div class="mapping-row">' +
+      '<label>' + f.label + (f.required ? ' *' : '') + '</label>' +
+      '<select id="map_' + f.key + '">' + options.join('') + '</select>' +
+      '</div>';
+  }
+
+  document.getElementById('mappingFields').innerHTML = html;
+  document.getElementById('mappingOverlay').classList.add('active');
+}
+
+function confirmMapping() {
+  const col = {
+    apt: parseInt(document.getElementById('map_apt').value),
+    owner: parseInt(document.getElementById('map_owner').value),
+    payment: parseInt(document.getElementById('map_payment').value),
+    phone: parseInt(document.getElementById('map_phone').value),
+    renter: parseInt(document.getElementById('map_renter').value)
+  };
+
+  if (col.apt === -1 || col.owner === -1 || col.payment === -1) {
+    alert('יש לבחור לפחות את העמודות: מספר דירה, שם בעל הדירה, תשלום חודשי');
+    return;
+  }
+
+  document.getElementById('mappingOverlay').classList.remove('active');
+  finalizeTenantsParse(_pendingTenantsRaw, col);
+
+  if (_pendingTenantsSaveRaw) {
+    saveTenantsToStorage(_pendingTenantsRaw);
+    document.getElementById('tenantsUploadStatus').className = 'upload-status success';
+    document.getElementById('tenantsUploadBox').classList.add('loaded');
+    document.getElementById('clearTenantsBtn').classList.remove('hidden');
+    _pendingTenantsSaveRaw = null;
+  }
+  tryRender();
+}
+
+function cancelMapping() {
+  document.getElementById('mappingOverlay').classList.remove('active');
+  _pendingTenantsRaw = null;
+  _pendingTenantsCol = null;
+  _pendingTenantsSaveRaw = null;
+}
+
+function finalizeTenantsParse(raw, col) {
+  tenantsData = [];
   for (let i = 1; i < raw.length; i++) {
     const row = raw[i];
-    if (!row || row[col.apt] === null || row[col.apt] === undefined) continue;
-    const aptNum = String(row[col.apt]).trim();
+    if (!row) continue;
+    const aptVal = col.apt >= 0 && col.apt < row.length ? row[col.apt] : null;
+    if (aptVal === null || aptVal === undefined) continue;
+    const aptNum = String(aptVal).trim();
     if (!aptNum) continue;
-    const monthlyPayment = parseFloat(row[col.payment]) || 0;
-    const ownerName = String(row[col.owner] || '').trim();
-    const renterName = col.renter < row.length ? String(row[col.renter] || '').trim() : '';
-    const phone = col.phone < row.length ? String(row[col.phone] || '').trim() : '';
+    const monthlyPayment = col.payment >= 0 ? (parseFloat(row[col.payment]) || 0) : 0;
+    const ownerName = col.owner >= 0 && col.owner < row.length ? String(row[col.owner] || '').trim() : '';
+    const renterName = col.renter >= 0 && col.renter < row.length ? String(row[col.renter] || '').trim() : '';
+    const phone = col.phone >= 0 && col.phone < row.length ? String(row[col.phone] || '').trim() : '';
     tenantsData.push({
       aptNum: aptNum,
       monthlyPayment: monthlyPayment,
       ownerName: ownerName,
       renterName: renterName,
-      phone: (phone && phone !== '-') ? phone : '',
+      phone: (phone && phone !== '-' && phone.length > 3) ? phone : '',
       searchNames: buildSearchNames(ownerName, renterName, aptNum)
     });
   }
+  // Save the confirmed column mapping for future loads
+  try { localStorage.setItem('vaad_col_map', JSON.stringify(col)); } catch(e) {}
 }
 
 function buildSearchNames(ownerName, renterName, aptNum) {
@@ -1288,7 +1438,13 @@ function loadTenantsFromStorage() {
     const data = localStorage.getItem('vaad_tenants');
     if (data) {
       const raw = JSON.parse(data);
-      parseTenantsData(raw);
+      // Load saved column mapping if exists
+      const savedCol = localStorage.getItem('vaad_col_map');
+      if (savedCol) {
+        finalizeTenantsParse(raw, JSON.parse(savedCol));
+      } else {
+        parseTenantsData(raw, true); // skip confirmation for cached data
+      }
       document.getElementById('tenantsUploadStatus').className = 'upload-status success';
       document.getElementById('tenantsUploadStatus').textContent = 'נטען מהזיכרון המקומי';
       document.getElementById('tenantsUploadBox').classList.add('loaded');
