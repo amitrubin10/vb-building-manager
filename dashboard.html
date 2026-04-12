@@ -114,7 +114,7 @@ body {
 
 /* Upload Area */
 .upload-area {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;
 }
 
 .upload-box {
@@ -469,7 +469,7 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
 
 @media (max-width: 768px) {
   .kpi-grid { grid-template-columns: 1fr; }
-  .upload-area { grid-template-columns: 1fr; }
+  .upload-area { grid-template-columns: 1fr !important; }
   .container { padding: 16px; }
   .header { padding: 16px 20px; flex-direction: column; gap: 12px; }
 }
@@ -506,6 +506,13 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
         <p>העלה קובץ XLSX עדכני &mdash; ניתן לטעון בכל פעם מחדש</p>
         <input type="file" id="bankFileInput" accept=".xlsx,.xls" onchange="handleBankUpload(event)">
         <div id="bankUploadStatus" class="upload-status pending">לא נטען</div>
+      </div>
+      <div class="upload-box" id="creditUploadBox" onclick="document.getElementById('creditFileInput').click()">
+        <div class="upload-icon">&#128179;</div>
+        <h3>קובץ חיובי אשראי</h3>
+        <p>העלה קובץ XLSX של סליקת אשראי &mdash; ניתן לטעון בכל פעם מחדש</p>
+        <input type="file" id="creditFileInput" accept=".xlsx,.xls" onchange="handleCreditUpload(event)">
+        <div id="creditUploadStatus" class="upload-status pending">לא נטען</div>
       </div>
       <div class="upload-box" id="tenantsUploadBox" onclick="document.getElementById('tenantsFileInput').click()">
         <div class="upload-icon">&#127968;</div>
@@ -655,6 +662,7 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
                 <th>שם דייר</th>
                 <th>סכום צפוי</th>
                 <th>סכום ששולם</th>
+                <th>אופן תשלום</th>
                 <th>סטטוס</th>
                 <th>פירוט תנועות</th>
                 <th>רמת ודאות</th>
@@ -754,7 +762,9 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
 
 <script>
 // ==================== GLOBAL STATE ====================
-let bankData = [];
+let bankData = [];      // raw bank transactions
+let creditData = [];    // raw credit card transactions
+let allIncomeData = []; // merged bank + credit income for matching
 let tenantsData = [];
 let collectionResults = [];
 let expensesResults = [];
@@ -831,6 +841,27 @@ function handleTenantsUpload(event) {
   reader.readAsArrayBuffer(file);
 }
 
+function handleCreditUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
+      parseCreditData(raw);
+      document.getElementById('creditUploadStatus').className = 'upload-status success';
+      document.getElementById('creditUploadStatus').textContent = file.name + ' נטען בהצלחה';
+      document.getElementById('creditUploadBox').classList.add('loaded');
+      tryRender();
+    } catch(err) {
+      alert('שגיאה בקריאת קובץ האשראי: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 function parseBankData(raw) {
   bankData = [];
   let headerIdx = -1;
@@ -858,10 +889,75 @@ function parseBankData(raw) {
       fee: String(row[6] || '').trim(),
       channel: String(row[7] || '').trim(),
       month: dateVal.getMonth() + 1,
-      year: dateVal.getFullYear()
+      year: dateVal.getFullYear(),
+      source: 'bank'
     });
   }
   bankData.sort((a, b) => b.date - a.date);
+}
+
+function parseCreditData(raw) {
+  creditData = [];
+  // Auto-detect header row: look for a row with "תאריך" or "שם" or "סכום"
+  let headerIdx = -1;
+  let colMap = {};
+  for (let i = 0; i < Math.min(raw.length, 15); i++) {
+    if (!raw[i]) continue;
+    const rowStr = raw[i].map(c => String(c || '').trim().toLowerCase());
+    // Look for date and amount columns
+    const dateCol = rowStr.findIndex(c => c.includes('תאריך'));
+    const amountCol = rowStr.findIndex(c => c.includes('סכום') || c.includes('זכות') || c.includes('חובה'));
+    const descCol = rowStr.findIndex(c => c.includes('תיאור') || c.includes('פרטים') || c.includes('שם'));
+    if (dateCol >= 0 && (amountCol >= 0 || descCol >= 0)) {
+      headerIdx = i;
+      colMap.date = dateCol;
+      colMap.amount = amountCol >= 0 ? amountCol : -1;
+      colMap.desc = descCol >= 0 ? descCol : -1;
+      // Try to find more columns
+      for (let j = 0; j < rowStr.length; j++) {
+        if (rowStr[j].includes('אסמכת') || rowStr[j].includes('מספר')) colMap.ref = j;
+        if (rowStr[j].includes('דירה') || rowStr[j].includes('הערה') || rowStr[j].includes('פרטים')) {
+          if (j !== colMap.desc) colMap.notes = j;
+        }
+      }
+      break;
+    }
+  }
+  if (headerIdx === -1) {
+    // Fallback: assume first row is header, cols: 0=date, 1=desc, 2=amount
+    headerIdx = 0;
+    colMap = { date: 0, desc: 1, amount: 2 };
+  }
+  for (let i = headerIdx + 1; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row) continue;
+    const dateVal = parseDate(row[colMap.date]);
+    if (!dateVal) continue;
+    let amount = 0;
+    if (colMap.amount >= 0) {
+      amount = parseFloat(String(row[colMap.amount] || '0').replace(/[^\d.\-]/g, '')) || 0;
+    }
+    if (amount === 0) continue; // skip zero rows
+    // Make income positive
+    amount = Math.abs(amount);
+    const desc = colMap.desc >= 0 ? String(row[colMap.desc] || '').trim() : '';
+    const notes = colMap.notes >= 0 ? String(row[colMap.notes] || '').trim() : '';
+    const ref = colMap.ref >= 0 ? String(row[colMap.ref] || '').trim() : '';
+    creditData.push({
+      date: dateVal,
+      dateStr: formatDate(dateVal),
+      description: desc + (notes ? ' ' + notes : ''),
+      amount: amount,
+      balance: 0,
+      reference: ref,
+      fee: '',
+      channel: 'אשראי',
+      month: dateVal.getMonth() + 1,
+      year: dateVal.getFullYear(),
+      source: 'credit'
+    });
+  }
+  creditData.sort((a, b) => b.date - a.date);
 }
 
 function parseDate(val) {
@@ -962,6 +1058,11 @@ function loadForecastFromStorage() {
 // ==================== RENDER ENGINE ====================
 function tryRender() {
   if (bankData.length === 0 || tenantsData.length === 0) return;
+  // Merge bank + credit into allIncomeData (positive transactions for matching)
+  allIncomeData = [
+    ...bankData.filter(tx => tx.amount > 0).map(tx => ({...tx, source: tx.source || 'bank'})),
+    ...creditData.map(tx => ({...tx, source: 'credit'}))
+  ];
   document.getElementById('mainContent').classList.remove('hidden');
   analyzeData();
   populateFilters();
@@ -1166,8 +1267,8 @@ function analyzeCollection() {
       // Skip non-apartment entries that are ועד בית
       const isSpecial = tenant.aptNum === 'מחסן ועד' || tenant.aptNum === 'שכירות חניה';
 
-      // Find matching transactions for this tenant in this month
-      const incomeTxs = bankData.filter(tx => {
+      // Find matching transactions from both bank and credit data
+      const incomeTxs = allIncomeData.filter(tx => {
         if (tx.amount <= 0) return false;
         if (tx.month !== month.m || tx.year !== month.y) return false;
         const match = matchTransactionToTenant(tx);
@@ -1192,6 +1293,14 @@ function analyzeCollection() {
         statusClass = 'badge-info';
       }
 
+      // Determine payment method
+      const sources = [...new Set(incomeTxs.map(tx => tx.source))];
+      let paymentMethod = '-';
+      if (sources.length === 0) paymentMethod = '-';
+      else if (sources.length === 1 && sources[0] === 'credit') paymentMethod = 'אשראי';
+      else if (sources.length === 1 && sources[0] === 'bank') paymentMethod = 'העברה בנקאית';
+      else paymentMethod = 'משולב';
+
       const txDetails = incomeTxs.map(tx => {
         const match = matchTransactionToTenant(tx);
         return {
@@ -1199,7 +1308,8 @@ function analyzeCollection() {
           amount: tx.amount,
           desc: tx.description,
           confidence: match ? match.confidence : 0,
-          details: match ? match.details : ''
+          details: match ? match.details : '',
+          source: tx.source
         };
       });
 
@@ -1217,7 +1327,8 @@ function analyzeCollection() {
         statusClass: statusClass,
         transactions: txDetails,
         confidence: maxConfidence,
-        isSpecial: isSpecial
+        isSpecial: isSpecial,
+        paymentMethod: paymentMethod
       });
     }
   }
@@ -1396,11 +1507,16 @@ function renderCollectionTable(data) {
     const confText = r.paid === 0 ? '-' :
       (r.confidence >= 70 ? 'גבוהה' : r.confidence >= 45 ? 'בינונית' : 'נמוכה');
 
-    const txDetailHtml = r.transactions.map(t =>
-      `<div style="font-size:11px;margin:2px 0;padding:2px 6px;background:rgba(255,255,255,0.03);border-radius:4px;">
-        ${t.date} | ${formatCurrency(t.amount)} | ${t.details}
-      </div>`
-    ).join('') || '<span style="color:var(--text-muted);">-</span>';
+    const txDetailHtml = r.transactions.map(t => {
+      const srcIcon = t.source === 'credit' ? '💳' : '🏦';
+      return `<div style="font-size:11px;margin:2px 0;padding:2px 6px;background:rgba(255,255,255,0.03);border-radius:4px;">
+        ${srcIcon} ${t.date} | ${formatCurrency(t.amount)} | ${t.details}
+      </div>`;
+    }).join('') || '<span style="color:var(--text-muted);">-</span>';
+
+    const pmClass = r.paymentMethod === 'אשראי' ? 'badge-info' :
+                    r.paymentMethod === 'העברה בנקאית' ? 'badge-success' :
+                    r.paymentMethod === 'משולב' ? 'badge-purple' : '';
 
     tr.innerHTML = `
       <td>${r.monthLabel}</td>
@@ -1408,6 +1524,7 @@ function renderCollectionTable(data) {
       <td>${r.tenantName}</td>
       <td>${formatCurrency(r.expected)}</td>
       <td class="${r.paid > 0 ? 'amount-positive' : ''}">${r.paid > 0 ? formatCurrency(r.paid) : '-'}</td>
+      <td>${pmClass ? '<span class="badge ' + pmClass + '">' + r.paymentMethod + '</span>' : '-'}</td>
       <td><span class="badge ${r.statusClass}">${r.status}</span></td>
       <td style="white-space:normal;max-width:300px;">${txDetailHtml}</td>
       <td><span class="confidence-${confLevel}">${confText}${r.confidence > 0 ? ' (' + r.confidence + '%)' : ''}</span></td>
@@ -1731,22 +1848,26 @@ function openAptDrilldown(aptNum) {
 
   // Build table
   let tableHtml = `<table><thead><tr>
-    <th>חודש</th><th>סכום צפוי</th><th>סכום ששולם</th><th>סטטוס</th><th>פירוט תנועות</th><th>רמת ודאות</th>
+    <th>חודש</th><th>סכום צפוי</th><th>סכום ששולם</th><th>אופן תשלום</th><th>סטטוס</th><th>פירוט תנועות</th><th>רמת ודאות</th>
   </tr></thead><tbody>`;
 
   aptData.forEach(r => {
     const confLevel = r.confidence >= 70 ? 'high' : r.confidence >= 45 ? 'medium' : 'low';
     const confText = r.paid === 0 ? '-' : (r.confidence >= 70 ? 'גבוהה' : r.confidence >= 45 ? 'בינונית' : 'נמוכה');
+    const pm = r.paymentMethod || '-';
+    const pmClass = pm === 'אשראי' ? 'badge-info' : pm === 'העברה בנקאית' ? 'badge-success' : pm === 'משולב' ? 'badge-purple' : '';
 
-    const txDetailHtml = r.transactions.map(t =>
-      '<div style="font-size:11px;margin:2px 0;padding:2px 6px;background:rgba(255,255,255,0.03);border-radius:4px;">' +
-      t.date + ' | ' + formatCurrency(t.amount) + ' | ' + t.details + '</div>'
-    ).join('') || '<span style="color:var(--text-muted);">—</span>';
+    const txDetailHtml = r.transactions.map(t => {
+      const srcIcon = t.source === 'credit' ? '💳' : '🏦';
+      return '<div style="font-size:11px;margin:2px 0;padding:2px 6px;background:rgba(255,255,255,0.03);border-radius:4px;">' +
+      srcIcon + ' ' + t.date + ' | ' + formatCurrency(t.amount) + ' | ' + t.details + '</div>';
+    }).join('') || '<span style="color:var(--text-muted);">—</span>';
 
     tableHtml += '<tr>' +
       '<td>' + r.monthLabel + '</td>' +
       '<td>' + formatCurrency(r.expected) + '</td>' +
       '<td class="' + (r.paid > 0 ? 'amount-positive' : '') + '">' + (r.paid > 0 ? formatCurrency(r.paid) : '—') + '</td>' +
+      '<td>' + (pmClass ? '<span class="badge ' + pmClass + '">' + pm + '</span>' : '-') + '</td>' +
       '<td><span class="badge ' + r.statusClass + '">' + r.status + '</span></td>' +
       '<td style="white-space:normal;max-width:350px;">' + txDetailHtml + '</td>' +
       '<td><span class="confidence-' + confLevel + '">' + confText + (r.confidence > 0 ? ' (' + r.confidence + '%)' : '') + '</span></td>' +
