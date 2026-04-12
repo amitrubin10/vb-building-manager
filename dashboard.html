@@ -121,14 +121,21 @@ body {
   background: var(--bg-card);
   border: 2px dashed var(--border);
   border-radius: 14px;
-  padding: 28px;
+  padding: 0;
   text-align: center;
-  cursor: pointer;
   transition: all 0.3s;
   position: relative;
+  overflow: hidden;
 }
 
-.upload-box:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+.upload-click-zone {
+  padding: 28px 28px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.upload-click-zone:hover { background: var(--bg-card-hover); }
+.upload-box:hover { border-color: var(--accent); }
 .upload-box.loaded { border-color: var(--success); border-style: solid; }
 .upload-box .upload-icon { font-size: 36px; margin-bottom: 10px; }
 .upload-box h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
@@ -151,7 +158,7 @@ body {
 .btn-clear-tenants:hover { background: var(--danger-bg); }
 
 .drive-link-area {
-  margin-top: 12px; padding-top: 10px;
+  padding: 10px 20px 16px;
   border-top: 1px solid var(--border);
 }
 .drive-link-area .drive-label {
@@ -526,46 +533,52 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
       העלאת קבצים
     </div>
     <div class="upload-area">
-      <div class="upload-box" id="bankUploadBox" onclick="document.getElementById('bankFileInput').click()">
-        <div class="upload-icon">&#128179;</div>
-        <h3>קובץ עובר ושב (בנק)</h3>
-        <p>העלה קובץ XLSX עדכני &mdash; ניתן לטעון בכל פעם מחדש</p>
-        <input type="file" id="bankFileInput" accept=".xlsx,.xls" onchange="handleBankUpload(event)">
-        <div id="bankUploadStatus" class="upload-status pending">לא נטען</div>
-        <div class="drive-link-area" onclick="event.stopPropagation()">
+      <div class="upload-box" id="bankUploadBox">
+        <div class="upload-click-zone" onclick="document.getElementById('bankFileInput').click()">
+          <div class="upload-icon">&#128179;</div>
+          <h3>קובץ עובר ושב (בנק)</h3>
+          <p>העלה קובץ XLSX עדכני &mdash; ניתן לטעון בכל פעם מחדש</p>
+          <input type="file" id="bankFileInput" accept=".xlsx,.xls" onchange="handleBankUpload(event)">
+          <div id="bankUploadStatus" class="upload-status pending">לא נטען</div>
+        </div>
+        <div class="drive-link-area">
           <div class="drive-label">או הדבק קישור Google Sheets / Drive:</div>
           <div class="drive-link-row">
-            <input type="text" id="bankDriveUrl" placeholder="הדבק קישור כאן..." onclick="event.stopPropagation()">
-            <button class="btn-drive" onclick="event.stopPropagation(); fetchFromDrive('bankDriveUrl','bank')">&#9729; טען</button>
+            <input type="text" id="bankDriveUrl" placeholder="הדבק קישור כאן...">
+            <button class="btn-drive" onclick="fetchFromDrive('bankDriveUrl','bank')">&#9729; טען</button>
           </div>
         </div>
       </div>
-      <div class="upload-box" id="creditUploadBox" onclick="document.getElementById('creditFileInput').click()">
-        <div class="upload-icon">&#128179;</div>
-        <h3>קובץ חיובי אשראי</h3>
-        <p>העלה קובץ XLSX של סליקת אשראי &mdash; ניתן לטעון בכל פעם מחדש</p>
-        <input type="file" id="creditFileInput" accept=".xlsx,.xls" onchange="handleCreditUpload(event)">
-        <div id="creditUploadStatus" class="upload-status pending">לא נטען</div>
-        <div class="drive-link-area" onclick="event.stopPropagation()">
+      <div class="upload-box" id="creditUploadBox">
+        <div class="upload-click-zone" onclick="document.getElementById('creditFileInput').click()">
+          <div class="upload-icon">&#128179;</div>
+          <h3>קובץ חיובי אשראי</h3>
+          <p>העלה קובץ XLSX של סליקת אשראי &mdash; ניתן לטעון בכל פעם מחדש</p>
+          <input type="file" id="creditFileInput" accept=".xlsx,.xls" onchange="handleCreditUpload(event)">
+          <div id="creditUploadStatus" class="upload-status pending">לא נטען</div>
+        </div>
+        <div class="drive-link-area">
           <div class="drive-label">או הדבק קישור Google Sheets / Drive:</div>
           <div class="drive-link-row">
-            <input type="text" id="creditDriveUrl" placeholder="הדבק קישור כאן..." onclick="event.stopPropagation()">
-            <button class="btn-drive" onclick="event.stopPropagation(); fetchFromDrive('creditDriveUrl','credit')">&#9729; טען</button>
+            <input type="text" id="creditDriveUrl" placeholder="הדבק קישור כאן...">
+            <button class="btn-drive" onclick="fetchFromDrive('creditDriveUrl','credit')">&#9729; טען</button>
           </div>
         </div>
       </div>
-      <div class="upload-box" id="tenantsUploadBox" onclick="document.getElementById('tenantsFileInput').click()">
-        <div class="upload-icon">&#127968;</div>
-        <h3>קובץ דיירים</h3>
-        <p>העלאה חד-פעמית &mdash; הקובץ יישמר לשימוש עתידי</p>
-        <input type="file" id="tenantsFileInput" accept=".xlsx,.xls" onchange="handleTenantsUpload(event)">
-        <div id="tenantsUploadStatus" class="upload-status pending">לא נטען</div>
-        <button class="btn-clear-tenants hidden" id="clearTenantsBtn" onclick="event.stopPropagation(); clearTenants();">נקה נתוני דיירים</button>
-        <div class="drive-link-area" onclick="event.stopPropagation()">
+      <div class="upload-box" id="tenantsUploadBox">
+        <div class="upload-click-zone" onclick="document.getElementById('tenantsFileInput').click()">
+          <div class="upload-icon">&#127968;</div>
+          <h3>קובץ דיירים</h3>
+          <p>העלאה חד-פעמית &mdash; הקובץ יישמר לשימוש עתידי</p>
+          <input type="file" id="tenantsFileInput" accept=".xlsx,.xls" onchange="handleTenantsUpload(event)">
+          <div id="tenantsUploadStatus" class="upload-status pending">לא נטען</div>
+          <button class="btn-clear-tenants hidden" id="clearTenantsBtn" onclick="event.stopPropagation(); clearTenants();">נקה נתוני דיירים</button>
+        </div>
+        <div class="drive-link-area">
           <div class="drive-label">או הדבק קישור Google Sheets / Drive:</div>
           <div class="drive-link-row">
-            <input type="text" id="tenantsDriveUrl" placeholder="הדבק קישור כאן..." onclick="event.stopPropagation()">
-            <button class="btn-drive" onclick="event.stopPropagation(); fetchFromDrive('tenantsDriveUrl','tenants')">&#9729; טען</button>
+            <input type="text" id="tenantsDriveUrl" placeholder="הדבק קישור כאן...">
+            <button class="btn-drive" onclick="fetchFromDrive('tenantsDriveUrl','tenants')">&#9729; טען</button>
           </div>
         </div>
       </div>
