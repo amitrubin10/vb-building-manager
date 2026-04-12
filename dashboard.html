@@ -707,28 +707,25 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
     <div class="section">
       <div class="section-title">
         <div class="icon" style="background:var(--success-bg);color:var(--success);">&#128176;</div>
-        טבלת גבייה חודשית מפורטת
+        טבלת גבייה מדיירים
       </div>
       <div class="table-wrapper">
         <div class="table-header">
-          <h3>גבייה מדיירים</h3>
-          <span class="record-count" id="collectionCount">0 רשומות</span>
+          <h3>גבייה מדיירים &mdash; סיכום לתקופה</h3>
+          <span class="record-count" id="collectionCount">0 דירות</span>
         </div>
         <div class="table-scroll">
           <table id="collectionTable">
             <thead>
               <tr>
-                <th>חודש</th>
                 <th>מס' דירה</th>
-                <th>שם דייר</th>
-                <th>סכום צפוי</th>
-                <th>סכום ששולם</th>
+                <th>שם בעל הדירה</th>
+                <th>דמי ועד (חודשי)</th>
+                <th>סכום לתשלום לתקופה</th>
+                <th>סכום ששולם לתקופה</th>
                 <th>חוב לתשלום</th>
-                <th>אופן תשלום</th>
                 <th>סטטוס</th>
-                <th>פירוט תנועות</th>
-                <th>רמת ודאות</th>
-                <th>יצירת קשר</th>
+                <th>אופן תשלום</th>
               </tr>
             </thead>
             <tbody id="collectionBody"></tbody>
@@ -1764,52 +1761,70 @@ function renderKPIs(filteredCollection, filteredExpenses, selMonth, selYear) {
 function renderCollectionTable(data) {
   const tbody = document.getElementById('collectionBody');
   tbody.innerHTML = '';
-  document.getElementById('collectionCount').textContent = data.length + ' רשומות';
+
+  // Group collection data by apartment — one row per apartment
+  const months = getActiveMonths();
+  const numMonths = months.length;
+  const aptMap = {};
 
   data.forEach(r => {
-    const tr = document.createElement('tr');
-    const confLevel = r.confidence >= 70 ? 'high' : r.confidence >= 45 ? 'medium' : 'low';
-    const confText = r.paid === 0 ? '-' :
-      (r.confidence >= 70 ? 'גבוהה' : r.confidence >= 45 ? 'בינונית' : 'נמוכה');
-
-    const txDetailHtml = r.transactions.map(t => {
-      const srcIcon = t.source === 'credit' ? '💳' : '🏦';
-      return `<div style="font-size:11px;margin:2px 0;padding:2px 6px;background:rgba(255,255,255,0.03);border-radius:4px;">
-        ${srcIcon} ${t.date} | ${formatCurrency(t.amount)} | ${t.details}
-      </div>`;
-    }).join('') || '<span style="color:var(--text-muted);">-</span>';
-
-    const pmClass = r.paymentMethod === 'אשראי' ? 'badge-info' :
-                    r.paymentMethod === 'העברה בנקאית' ? 'badge-success' :
-                    r.paymentMethod === 'משולב' ? 'badge-purple' : '';
-
-    const debt = r.cumulativeDebt || 0;
-    const debtHtml = debt > 0 ? '<span class="amount-negative" style="font-weight:700;">' + formatCurrency(debt) + '</span>' : '<span style="color:var(--success);">—</span>';
-
-    // WhatsApp link
-    let contactHtml = '-';
-    if (r.phone) {
-      // Clean phone: remove dashes, spaces, leading 0 -> +972
-      let cleanPhone = r.phone.replace(/[\s\-()]/g, '');
-      if (cleanPhone.startsWith('0')) cleanPhone = '972' + cleanPhone.substring(1);
-      else if (!cleanPhone.startsWith('+') && !cleanPhone.startsWith('972')) cleanPhone = '972' + cleanPhone;
-      cleanPhone = cleanPhone.replace(/^\+/, '');
-      const waMsg = encodeURIComponent('שלום, פנייה מוועד הבית הרב משורר 6. דירה ' + r.aptNum + ' - קיים חוב ועד בית בסך ' + formatCurrency(debt > 0 ? debt : r.expected) + '. נשמח להסדרה. תודה.');
-      contactHtml = '<a href="https://wa.me/' + cleanPhone + '?text=' + waMsg + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;background:#25D366;color:#fff;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;" title="שלח הודעת וואטסאפ ל-' + r.phone + '">📱 ' + r.phone + '</a>';
+    if (!aptMap[r.aptNum]) {
+      aptMap[r.aptNum] = { aptNum: r.aptNum, tenantName: r.tenantName, monthly: r.expected,
+        totalExpected: 0, totalPaid: 0, months: {}, sources: new Set(), phone: r.phone || '' };
     }
+    const a = aptMap[r.aptNum];
+    a.totalExpected += r.expected;
+    a.totalPaid += r.paid;
+    a.months[r.month + '-' + r.year] = r;
+    if (r.paymentMethod && r.paymentMethod !== '-') a.sources.add(r.paymentMethod);
+  });
+
+  const aptList = Object.values(aptMap);
+
+  // Apply status filter
+  const statusFilter = document.getElementById('filterPayStatus').value;
+  const filtered = aptList.filter(a => {
+    const debt = a.totalExpected - a.totalPaid;
+    if (statusFilter === 'paid') return debt <= 5 && a.totalPaid > 0;
+    if (statusFilter === 'unpaid') return a.totalPaid === 0;
+    if (statusFilter === 'partial') return a.totalPaid > 0 && debt > 5;
+    if (statusFilter === 'overpaid') return a.totalPaid > a.totalExpected + 5;
+    return true;
+  });
+
+  document.getElementById('collectionCount').textContent = filtered.length + ' דירות';
+
+  filtered.forEach(a => {
+    const debt = a.totalExpected - a.totalPaid;
+    const tr = document.createElement('tr');
+
+    // Status
+    let status, statusClass;
+    if (a.totalPaid === 0) { status = 'לא שילם'; statusClass = 'badge-danger'; }
+    else if (debt <= 5 && debt >= -5) { status = 'שילם'; statusClass = 'badge-success'; }
+    else if (a.totalPaid < a.totalExpected) { status = 'שילם חלקית'; statusClass = 'badge-warning'; }
+    else { status = 'שילם ביתר'; statusClass = 'badge-info'; }
+
+    // Payment method
+    const srcArr = [...a.sources];
+    let pm = '-', pmClass = '';
+    if (srcArr.length === 0 || (srcArr.length === 1 && srcArr[0] === '-')) { pm = '-'; }
+    else if (srcArr.length === 1) { pm = srcArr[0]; }
+    else if (srcArr.includes('העברה בנקאית') && srcArr.includes('אשראי')) { pm = 'משולב'; }
+    else { pm = srcArr.filter(s => s !== '-').join(' + ') || '-'; }
+    pmClass = pm === 'אשראי' ? 'badge-info' : pm === 'העברה בנקאית' ? 'badge-success' : pm === 'משולב' ? 'badge-purple' : '';
+
+    const debtHtml = debt > 5 ? '<span class="amount-negative" style="font-weight:700;">' + formatCurrency(debt) + '</span>' : '<span style="color:var(--success);">0</span>';
 
     tr.innerHTML = `
-      <td>${r.monthLabel}</td>
-      <td><strong class="clickable-apt" onclick="openAptDrilldown('${r.aptNum}')" title="לחץ לצפייה בכל התשלומים של דירה ${r.aptNum}">${r.aptNum}</strong></td>
-      <td>${r.tenantName}</td>
-      <td>${formatCurrency(r.expected)}</td>
-      <td class="${r.paid > 0 ? 'amount-positive' : ''}">${r.paid > 0 ? formatCurrency(r.paid) : '-'}</td>
+      <td><strong class="clickable-apt" onclick="openAptDrilldown('${a.aptNum}')" title="לחץ לצפייה בכרטיס דירה ${a.aptNum}">${a.aptNum}</strong></td>
+      <td>${a.tenantName}</td>
+      <td>${formatCurrency(a.monthly)}</td>
+      <td>${formatCurrency(a.totalExpected)}</td>
+      <td class="${a.totalPaid > 0 ? 'amount-positive' : ''}">${a.totalPaid > 0 ? formatCurrency(a.totalPaid) : '—'}</td>
       <td>${debtHtml}</td>
-      <td>${pmClass ? '<span class="badge ' + pmClass + '">' + r.paymentMethod + '</span>' : '-'}</td>
-      <td><span class="badge ${r.statusClass}">${r.status}</span></td>
-      <td style="white-space:normal;max-width:300px;">${txDetailHtml}</td>
-      <td><span class="confidence-${confLevel}">${confText}${r.confidence > 0 ? ' (' + r.confidence + '%)' : ''}</span></td>
-      <td>${contactHtml}</td>
+      <td><span class="badge ${statusClass}">${status}</span></td>
+      <td>${pmClass ? '<span class="badge ' + pmClass + '">' + pm + '</span>' : '-'}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -2095,16 +2110,29 @@ function openAptDrilldown(aptNum) {
 
   const overlay = document.getElementById('drilldownOverlay');
   document.getElementById('drilldownTitle').textContent = 'דירה ' + aptNum + ' — ' + tenant.ownerName;
-  document.getElementById('drilldownSubtitle').textContent = 'כל התשלומים לאורך התקופה | תשלום חודשי צפוי: ' + formatCurrency(tenant.monthlyPayment);
+  document.getElementById('drilldownSubtitle').textContent = 'דמי ועד חודשי: ' + formatCurrency(tenant.monthlyPayment);
 
-  // Gather all collection data for this apartment across all months
   const aptData = collectionResults.filter(r => r.aptNum === aptNum);
   const totalPaid = aptData.reduce((s, r) => s + r.paid, 0);
   const totalExpected = aptData.reduce((s, r) => s + r.expected, 0);
+  const debt = totalExpected - totalPaid;
   const monthsPaid = aptData.filter(r => r.paid > 0).length;
   const monthsUnpaid = aptData.filter(r => r.paid === 0).length;
 
-  // Summary stats
+  // WhatsApp contact button
+  let waHtml = '<div class="stat-label">יצירת קשר</div><div class="stat-value" style="font-size:14px;">אין מספר</div>';
+  if (tenant.phone) {
+    let cleanPhone = tenant.phone.replace(/[\s\-()]/g, '');
+    if (cleanPhone.startsWith('0')) cleanPhone = '972' + cleanPhone.substring(1);
+    else if (!cleanPhone.startsWith('+') && !cleanPhone.startsWith('972')) cleanPhone = '972' + cleanPhone;
+    cleanPhone = cleanPhone.replace(/^\+/, '');
+    const waMsg = encodeURIComponent('שלום, פנייה מוועד הבית הרב משורר 6.\nדירה ' + aptNum + ' — ' + tenant.ownerName + '.\nקיים חוב ועד בית בסך ' + formatCurrency(debt > 0 ? debt : tenant.monthlyPayment) + '.\nנשמח להסדרה. תודה.');
+    waHtml = '<div class="stat-label">יצירת קשר</div>' +
+      '<a href="https://wa.me/' + cleanPhone + '?text=' + waMsg + '" target="_blank" rel="noopener" ' +
+      'style="display:inline-flex;align-items:center;gap:6px;background:#25D366;color:#fff;padding:8px 16px;border-radius:10px;font-size:13px;font-weight:600;text-decoration:none;margin-top:4px;" ' +
+      'title="שלח הודעת וואטסאפ">📱 ' + tenant.phone + '</a>';
+  }
+
   document.getElementById('drilldownSummary').innerHTML = `
     <div class="drilldown-stat">
       <div class="stat-label">סה"כ שולם</div>
@@ -2115,8 +2143,8 @@ function openAptDrilldown(aptNum) {
       <div class="stat-value" style="color:var(--accent-light)">${formatCurrency(totalExpected)}</div>
     </div>
     <div class="drilldown-stat">
-      <div class="stat-label">פער</div>
-      <div class="stat-value" style="color:${totalExpected - totalPaid > 5 ? 'var(--danger)' : 'var(--success)'}">${formatCurrency(totalExpected - totalPaid)}</div>
+      <div class="stat-label">חוב</div>
+      <div class="stat-value" style="color:${debt > 5 ? 'var(--danger)' : 'var(--success)'}">${debt > 5 ? formatCurrency(debt) : '0'}</div>
     </div>
     <div class="drilldown-stat">
       <div class="stat-label">חודשים ששילם</div>
@@ -2126,12 +2154,15 @@ function openAptDrilldown(aptNum) {
       <div class="stat-label">חודשים שלא שילם</div>
       <div class="stat-value" style="color:var(--danger)">${monthsUnpaid}</div>
     </div>
+    <div class="drilldown-stat">
+      ${waHtml}
+    </div>
   `;
 
-  // Build table
-  let tableHtml = `<table><thead><tr>
-    <th>חודש</th><th>סכום צפוי</th><th>סכום ששולם</th><th>אופן תשלום</th><th>סטטוס</th><th>פירוט תנועות</th><th>רמת ודאות</th>
-  </tr></thead><tbody>`;
+  // Monthly breakdown table
+  let tableHtml = '<table><thead><tr>' +
+    '<th>חודש</th><th>סכום צפוי</th><th>סכום ששולם</th><th>סטטוס</th><th>אופן תשלום</th><th>פירוט תנועות</th><th>רמת ודאות</th>' +
+    '</tr></thead><tbody>';
 
   aptData.forEach(r => {
     const confLevel = r.confidence >= 70 ? 'high' : r.confidence >= 45 ? 'medium' : 'low';
@@ -2142,15 +2173,15 @@ function openAptDrilldown(aptNum) {
     const txDetailHtml = r.transactions.map(t => {
       const srcIcon = t.source === 'credit' ? '💳' : '🏦';
       return '<div style="font-size:11px;margin:2px 0;padding:2px 6px;background:rgba(255,255,255,0.03);border-radius:4px;">' +
-      srcIcon + ' ' + t.date + ' | ' + formatCurrency(t.amount) + ' | ' + t.details + '</div>';
+        srcIcon + ' ' + t.date + ' | ' + formatCurrency(t.amount) + ' | ' + t.details + '</div>';
     }).join('') || '<span style="color:var(--text-muted);">—</span>';
 
-    tableHtml += '<tr>' +
-      '<td>' + r.monthLabel + '</td>' +
+    tableHtml += '<tr style="background:' + (r.paid === 0 ? 'rgba(239,68,68,0.04)' : '') + '">' +
+      '<td><strong>' + r.monthLabel + '</strong></td>' +
       '<td>' + formatCurrency(r.expected) + '</td>' +
       '<td class="' + (r.paid > 0 ? 'amount-positive' : '') + '">' + (r.paid > 0 ? formatCurrency(r.paid) : '—') + '</td>' +
-      '<td>' + (pmClass ? '<span class="badge ' + pmClass + '">' + pm + '</span>' : '-') + '</td>' +
       '<td><span class="badge ' + r.statusClass + '">' + r.status + '</span></td>' +
+      '<td>' + (pmClass ? '<span class="badge ' + pmClass + '">' + pm + '</span>' : '-') + '</td>' +
       '<td style="white-space:normal;max-width:350px;">' + txDetailHtml + '</td>' +
       '<td><span class="confidence-' + confLevel + '">' + confText + (r.confidence > 0 ? ' (' + r.confidence + '%)' : '') + '</span></td>' +
       '</tr>';
