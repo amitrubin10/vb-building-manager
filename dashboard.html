@@ -935,78 +935,78 @@ async function fetchFromDrive(inputId, target) {
   statusEl.className = 'upload-status pending';
   statusEl.textContent = 'טוען מדרייב...';
 
-  let wb = null;
-
-  if (info.type === 'sheets') {
-    // Strategy 1: Google Visualization API — returns CSV with CORS support
-    const csvUrl = 'https://docs.google.com/spreadsheets/d/' + info.id + '/gviz/tq?tqx=out:csv';
-    try {
-      statusEl.textContent = 'טוען מ-Google Sheets...';
-      const resp = await fetch(csvUrl);
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const csvText = await resp.text();
-      if (csvText.includes('<!DOCTYPE') || csvText.includes('<html')) throw new Error('Got HTML');
-      wb = XLSX.read(csvText, { type: 'string' });
-    } catch(e1) {
-      // Strategy 2: CORS proxy with XLSX export
-      const xlsxUrl = 'https://docs.google.com/spreadsheets/d/' + info.id + '/export?format=xlsx';
-      const proxies = ['https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
-      for (const proxy of proxies) {
-        try {
-          statusEl.textContent = 'טוען דרך proxy...';
-          const resp = await fetch(proxy + encodeURIComponent(xlsxUrl));
-          if (!resp.ok) continue;
-          const buf = await resp.arrayBuffer();
-          const h = new Uint8Array(buf.slice(0, 2));
-          if (h[0] !== 0x50 || h[1] !== 0x4B) continue; // Not XLSX
-          wb = XLSX.read(buf, { type: 'array', cellDates: true });
-          break;
-        } catch(e2) { continue; }
-      }
-    }
-  } else {
-    // Google Drive file — try CORS proxies
-    const driveUrl = 'https://drive.google.com/uc?export=download&id=' + info.id;
-    const proxies = ['https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
-    for (const proxy of proxies) {
-      try {
-        statusEl.textContent = 'טוען מדרייב...';
-        const resp = await fetch(proxy + encodeURIComponent(driveUrl));
-        if (!resp.ok) continue;
-        const buf = await resp.arrayBuffer();
-        const h = new Uint8Array(buf.slice(0, 2));
-        if (h[0] !== 0x50 || h[1] !== 0x4B) continue;
-        wb = XLSX.read(buf, { type: 'array', cellDates: true });
-        break;
-      } catch(e) { continue; }
-    }
-  }
-
-  if (!wb) {
+  if (info.type !== 'sheets') {
     statusEl.className = 'upload-status pending';
-    statusEl.textContent = 'שגיאה בטעינה';
-    alert('לא ניתן לגשת לקובץ.\n\nודא ש:\n1. הקובץ משותף ל"כל מי שיש לו את הקישור"\n2. ההרשאה היא "צפייה" לפחות\n\nאם עדיין לא עובד — הורד את הקובץ למחשב והעלה ידנית.');
+    statusEl.textContent = 'שגיאה';
+    alert('טעינה מדרייב עובדת רק עם קבצי Google Sheets.\n\nאם הקובץ הוא XLSX רגיל בדרייב:\n1. פתח אותו בדרייב בלחיצה כפולה\n2. הוא ייפתח כ-Google Sheets\n3. העתק את הקישור מסרגל הכתובות\n4. הדבק כאן');
     return;
   }
 
+  statusEl.textContent = 'טוען מ-Google Sheets...';
+
+  // Use JSONP (script tag) — bypasses CORS entirely
+  const callbackName = '_gvizCb_' + Date.now();
+
   try {
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    const raw = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        delete window[callbackName];
+        reject(new Error('timeout'));
+      }, 15000);
+
+      window[callbackName] = function(response) {
+        clearTimeout(timeout);
+        delete window[callbackName];
+        if (response && response.status === 'ok' && response.table) {
+          // Convert Google DataTable to 2D array
+          const cols = response.table.cols;
+          const rows = response.table.rows;
+          const result = [];
+          // Header row
+          result.push(cols.map(c => c.label || c.id || ''));
+          // Data rows
+          for (const row of rows) {
+            result.push(row.c.map((cell, i) => {
+              if (!cell || cell.v === null || cell.v === undefined) return null;
+              // Handle dates
+              if (cols[i].type === 'date' || cols[i].type === 'datetime') {
+                // Google returns "Date(2026,0,15)" format
+                const dm = String(cell.v).match(/Date\((\d+),(\d+),(\d+)/);
+                if (dm) return new Date(parseInt(dm[1]), parseInt(dm[2]), parseInt(dm[3]));
+                return cell.f || cell.v; // Use formatted value
+              }
+              return cell.v;
+            }));
+          }
+          resolve(result);
+        } else {
+          reject(new Error(response ? (response.errors && response.errors[0] && response.errors[0].message) || 'Unknown error' : 'No response'));
+        }
+      };
+
+      const script = document.createElement('script');
+      script.src = 'https://docs.google.com/spreadsheets/d/' + info.id +
+        '/gviz/tq?tqx=responseHandler:' + callbackName;
+      script.onerror = () => { clearTimeout(timeout); delete window[callbackName]; reject(new Error('Script load failed')); };
+      document.head.appendChild(script);
+      // Cleanup script tag
+      script.addEventListener('load', () => script.remove());
+    });
+
     if (target === 'bank') {
-      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
       parseBankData(raw);
       statusEl.className = 'upload-status success';
       statusEl.textContent = 'נטען מדרייב בהצלחה';
       document.getElementById(boxMap[target]).classList.add('loaded');
       document.getElementById('headerStatus').textContent = 'נתונים נטענו';
     } else if (target === 'credit') {
-      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
       parseCreditData(raw);
       statusEl.className = 'upload-status success';
       statusEl.textContent = 'נטען מדרייב בהצלחה';
       document.getElementById(boxMap[target]).classList.add('loaded');
     } else if (target === 'tenants') {
-      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
       parseTenantsData(raw);
+      // Save to localStorage - we need the raw array
       saveTenantsToStorage(raw);
       statusEl.className = 'upload-status success';
       statusEl.textContent = 'נטען מדרייב ונשמר';
@@ -1016,8 +1016,8 @@ async function fetchFromDrive(inputId, target) {
     tryRender();
   } catch(err) {
     statusEl.className = 'upload-status pending';
-    statusEl.textContent = 'שגיאה בעיבוד';
-    alert('הקובץ הורד אך לא ניתן לעבד אותו: ' + err.message);
+    statusEl.textContent = 'שגיאה בטעינה';
+    alert('לא ניתן לגשת לקובץ.\n\nודא ש:\n1. הקובץ הוא Google Sheets (לא XLSX רגיל)\n2. משותף ל"כל מי שיש לו את הקישור"\n\nאם עדיין לא עובד — הורד את הקובץ למחשב והעלה ידנית.');
   }
 }
 
