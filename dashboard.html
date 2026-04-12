@@ -1549,10 +1549,10 @@ function analyzeCollection() {
   }
 
   // Calculate cumulative debt per apartment across all months
-  const months = getActiveMonths();
+  const allMonths = getActiveMonths();
   for (const tenant of tenantsData) {
     let cumulativeDebt = 0;
-    for (const month of months) {
+    for (const month of allMonths) {
       const rec = collectionResults.find(r => r.aptNum === tenant.aptNum && r.month === month.m && r.year === month.y);
       if (rec) {
         const unpaid = rec.expected - rec.paid;
