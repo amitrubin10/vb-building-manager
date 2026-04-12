@@ -1228,14 +1228,16 @@ function parseTenantsData(raw) {
   const header = raw[0].map(c => String(c || '').trim());
   let col = { apt: 0, payment: 1, owner: 3, phone: 5, renter: 7 }; // defaults
 
-  // Try to find columns by header keywords — order matters, more specific first
+  // Try to find columns by header keywords
+  // Use flags to only match FIRST occurrence (owner's phone, not renter's)
+  let foundApt = false, foundOwner = false, foundPayment = false, foundPhone = false, foundRenter = false;
   for (let j = 0; j < header.length; j++) {
     const h = header[j];
-    if (h.includes('מספר דירה') || (h === 'דירה')) col.apt = j;
-    else if (h.includes('שם בעל') || h.includes('שם הדייר') || (h.includes('שם') && !h.includes('שוכר'))) col.owner = j;
-    else if (h.includes('תשלום חודשי') || h.includes('דמי ועד')) col.payment = j;
-    else if (h.includes('טלפון נייד') || h.includes('נייד')) col.phone = j;
-    else if (h.includes('שוכר')) col.renter = j;
+    if (!foundApt && (h.includes('מספר דירה') || h === 'דירה')) { col.apt = j; foundApt = true; }
+    else if (!foundOwner && (h.includes('שם בעל') || h.includes('שם הדייר') || (h.includes('שם') && !h.includes('שוכר')))) { col.owner = j; foundOwner = true; }
+    else if (!foundPayment && (h.includes('תשלום חודשי') || h.includes('דמי ועד'))) { col.payment = j; foundPayment = true; }
+    else if (!foundPhone && (h.includes('טלפון נייד') || h.includes('נייד'))) { col.phone = j; foundPhone = true; }
+    else if (!foundRenter && h.includes('שוכר')) { col.renter = j; foundRenter = true; }
   }
 
   for (let i = 1; i < raw.length; i++) {
