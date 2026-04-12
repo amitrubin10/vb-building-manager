@@ -936,39 +936,74 @@ async function fetchFromDrive(inputId, target) {
     fetchUrl = 'https://drive.google.com/uc?export=download&id=' + info.id;
   }
 
-  // Update status
   const statusMap = { bank: 'bankUploadStatus', credit: 'creditUploadStatus', tenants: 'tenantsUploadStatus' };
   const boxMap = { bank: 'bankUploadBox', credit: 'creditUploadBox', tenants: 'tenantsUploadBox' };
   const statusEl = document.getElementById(statusMap[target]);
   statusEl.className = 'upload-status pending';
   statusEl.textContent = 'טוען מדרייב...';
 
-  try {
-    const resp = await fetch(fetchUrl);
-    if (!resp.ok) throw new Error('שגיאה בהורדה: ' + resp.status + '. ודא שהקובץ משותף לכל מי שיש לו את הקישור.');
-    const arrayBuffer = await resp.arrayBuffer();
+  // Try direct fetch first, then CORS proxies as fallback
+  const CORS_PROXIES = [
+    '',  // direct (works if hosted on https)
+    'https://corsproxy.io/?',
+    'https://api.allorigins.win/raw?url='
+  ];
 
+  let arrayBuffer = null;
+  let lastError = '';
+
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const proxyUrl = proxy ? proxy + encodeURIComponent(fetchUrl) : fetchUrl;
+      statusEl.textContent = proxy ? 'טוען דרך proxy...' : 'טוען מדרייב...';
+      const resp = await fetch(proxyUrl);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      arrayBuffer = await resp.arrayBuffer();
+      // Verify it's a valid XLSX (starts with PK)
+      const header = new Uint8Array(arrayBuffer.slice(0, 4));
+      if (header[0] === 0x50 && header[1] === 0x4B) break; // Valid ZIP/XLSX
+      // If it's HTML (Google redirect page), try next proxy
+      const text = new TextDecoder().decode(arrayBuffer.slice(0, 100));
+      if (text.includes('<html') || text.includes('<!DOCTYPE')) {
+        arrayBuffer = null;
+        throw new Error('Received HTML instead of XLSX');
+      }
+      break; // Got data
+    } catch(err) {
+      lastError = err.message;
+      arrayBuffer = null;
+      continue;
+    }
+  }
+
+  if (!arrayBuffer) {
+    statusEl.className = 'upload-status pending';
+    statusEl.textContent = 'שגיאה בטעינה';
+    alert('לא ניתן לגשת לקובץ.\n\nודא ש:\n1. הקובץ משותף ל"כל מי שיש לו את הקישור"\n2. ההרשאה היא "צפייה" לפחות\n\nאם עדיין לא עובד — הורד את הקובץ למחשב והעלה ידנית.');
+    return;
+  }
+
+  try {
     const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
 
     if (target === 'bank') {
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
       parseBankData(raw);
       statusEl.className = 'upload-status success';
       statusEl.textContent = 'נטען מדרייב בהצלחה';
       document.getElementById(boxMap[target]).classList.add('loaded');
       document.getElementById('headerStatus').textContent = 'נתונים נטענו';
     } else if (target === 'credit') {
-      // For credit, re-read without dateNF to preserve original format
-      const raw2 = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-      parseCreditData(raw2);
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      parseCreditData(raw);
       statusEl.className = 'upload-status success';
       statusEl.textContent = 'נטען מדרייב בהצלחה';
       document.getElementById(boxMap[target]).classList.add('loaded');
     } else if (target === 'tenants') {
-      const raw2 = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-      parseTenantsData(raw2);
-      saveTenantsToStorage(raw2);
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      parseTenantsData(raw);
+      saveTenantsToStorage(raw);
       statusEl.className = 'upload-status success';
       statusEl.textContent = 'נטען מדרייב ונשמר';
       document.getElementById(boxMap[target]).classList.add('loaded');
@@ -977,11 +1012,8 @@ async function fetchFromDrive(inputId, target) {
     tryRender();
   } catch(err) {
     statusEl.className = 'upload-status pending';
-    statusEl.textContent = 'שגיאה בטעינה';
-    const msg = err.message.includes('Failed to fetch') || err.message.includes('CORS') || err.message.includes('NetworkError')
-      ? 'לא ניתן לגשת לקובץ. ודא ש:\n1. הקובץ משותף ל"כל מי שיש לו את הקישור"\n2. אם זה Google Sheets — לחץ על שיתוף ובחר "כל מי שיש לו קישור"\n3. לחלופין, הורד את הקובץ למחשב והעלה ידנית'
-      : 'שגיאה: ' + err.message;
-    alert(msg);
+    statusEl.textContent = 'שגיאה בעיבוד';
+    alert('הקובץ הורד אך לא ניתן לעבד אותו: ' + err.message);
   }
 }
 
