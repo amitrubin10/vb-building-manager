@@ -898,64 +898,126 @@ function parseBankData(raw) {
 
 function parseCreditData(raw) {
   creditData = [];
-  // Auto-detect header row: look for a row with "תאריך" or "שם" or "סכום"
+
+  // Detect format: "Hombi summary" has columns: דירה, שם, תשלום חודשי, חודשים ששולמו, ...
   let headerIdx = -1;
+  let isHombiFormat = false;
   let colMap = {};
+
   for (let i = 0; i < Math.min(raw.length, 15); i++) {
     if (!raw[i]) continue;
-    const rowStr = raw[i].map(c => String(c || '').trim().toLowerCase());
-    // Look for date and amount columns
-    const dateCol = rowStr.findIndex(c => c.includes('תאריך'));
-    const amountCol = rowStr.findIndex(c => c.includes('סכום') || c.includes('זכות') || c.includes('חובה'));
-    const descCol = rowStr.findIndex(c => c.includes('תיאור') || c.includes('פרטים') || c.includes('שם'));
-    if (dateCol >= 0 && (amountCol >= 0 || descCol >= 0)) {
+    const rowStr = raw[i].map(c => String(c || '').trim());
+
+    // Check for Hombi summary format: has "דירה" and "חודשים"
+    const aptCol = rowStr.findIndex(c => c.includes('דירה'));
+    const monthsCol = rowStr.findIndex(c => c.includes('חודש'));
+    const nameCol = rowStr.findIndex(c => c.includes('שם'));
+    const amountCol = rowStr.findIndex(c => c.includes('תשלום חודשי') || c.includes('חודשי'));
+
+    if (aptCol >= 0 && (monthsCol >= 0 || nameCol >= 0)) {
       headerIdx = i;
-      colMap.date = dateCol;
-      colMap.amount = amountCol >= 0 ? amountCol : -1;
-      colMap.desc = descCol >= 0 ? descCol : -1;
-      // Try to find more columns
+      isHombiFormat = true;
+      colMap = { apt: aptCol, name: nameCol, monthly: amountCol, months: monthsCol };
+      // Find total paid column
       for (let j = 0; j < rowStr.length; j++) {
-        if (rowStr[j].includes('אסמכת') || rowStr[j].includes('מספר')) colMap.ref = j;
-        if (rowStr[j].includes('דירה') || rowStr[j].includes('הערה') || rowStr[j].includes('פרטים')) {
-          if (j !== colMap.desc) colMap.notes = j;
-        }
+        if (rowStr[j].includes('סה"כ') || rowStr[j].includes('שולם')) { colMap.totalPaid = j; break; }
       }
       break;
     }
-  }
-  if (headerIdx === -1) {
-    // Fallback: assume first row is header, cols: 0=date, 1=desc, 2=amount
-    headerIdx = 0;
-    colMap = { date: 0, desc: 1, amount: 2 };
-  }
-  for (let i = headerIdx + 1; i < raw.length; i++) {
-    const row = raw[i];
-    if (!row) continue;
-    const dateVal = parseDate(row[colMap.date]);
-    if (!dateVal) continue;
-    let amount = 0;
-    if (colMap.amount >= 0) {
-      amount = parseFloat(String(row[colMap.amount] || '0').replace(/[^\d.\-]/g, '')) || 0;
+
+    // Check for standard transaction format: has "תאריך"
+    const dateCol = rowStr.findIndex(c => c.includes('תאריך'));
+    const descCol = rowStr.findIndex(c => c.includes('תיאור') || c.includes('פרטים') || c.includes('שם'));
+    const amtCol = rowStr.findIndex(c => c.includes('סכום') || c.includes('זכות') || c.includes('חובה'));
+    if (dateCol >= 0 && (amtCol >= 0 || descCol >= 0)) {
+      headerIdx = i;
+      colMap = { date: dateCol, desc: descCol >= 0 ? descCol : -1, amount: amtCol >= 0 ? amtCol : -1 };
+      break;
     }
-    if (amount === 0) continue; // skip zero rows
-    // Make income positive
-    amount = Math.abs(amount);
-    const desc = colMap.desc >= 0 ? String(row[colMap.desc] || '').trim() : '';
-    const notes = colMap.notes >= 0 ? String(row[colMap.notes] || '').trim() : '';
-    const ref = colMap.ref >= 0 ? String(row[colMap.ref] || '').trim() : '';
-    creditData.push({
-      date: dateVal,
-      dateStr: formatDate(dateVal),
-      description: desc + (notes ? ' ' + notes : ''),
-      amount: amount,
-      balance: 0,
-      reference: ref,
-      fee: '',
-      channel: 'אשראי',
-      month: dateVal.getMonth() + 1,
-      year: dateVal.getFullYear(),
-      source: 'credit'
-    });
+  }
+
+  if (headerIdx === -1) return;
+
+  const MONTH_MAP = {
+    'ינואר': 1, 'פברואר': 2, 'מרץ': 3, 'אפריל': 4,
+    'מאי': 5, 'יוני': 6, 'יולי': 7, 'אוגוסט': 8,
+    'ספטמבר': 9, 'אוקטובר': 10, 'נובמבר': 11, 'דצמבר': 12
+  };
+
+  if (isHombiFormat) {
+    // Hombi summary format: each row = one apartment with months listed as text
+    const currentYear = new Date().getFullYear();
+
+    for (let i = headerIdx + 1; i < raw.length; i++) {
+      const row = raw[i];
+      if (!row) continue;
+
+      const aptNum = String(Math.floor(parseFloat(row[colMap.apt]) || 0));
+      if (!aptNum || aptNum === '0' || aptNum === 'NaN') continue;
+
+      const tenantName = colMap.name >= 0 ? String(row[colMap.name] || '').trim() : '';
+      const monthlyAmount = colMap.monthly >= 0 ? (parseFloat(row[colMap.monthly]) || 0) : 0;
+      const monthsText = colMap.months >= 0 ? String(row[colMap.months] || '').trim() : '';
+
+      if (!monthsText || monthlyAmount === 0) continue;
+
+      // Parse "שולם במלואו" = all 12 months
+      let monthNumbers = [];
+      if (monthsText.includes('מלואו') || monthsText.includes('שנתי')) {
+        monthNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      } else {
+        // Parse comma-separated month names: "ינואר, פברואר, מרץ"
+        const parts = monthsText.split(/[,،\s]+/).map(s => s.trim()).filter(s => s);
+        for (const part of parts) {
+          for (const [name, num] of Object.entries(MONTH_MAP)) {
+            if (part.includes(name)) { monthNumbers.push(num); break; }
+          }
+        }
+      }
+
+      // Create one credit transaction per month
+      for (const m of monthNumbers) {
+        creditData.push({
+          date: new Date(currentYear, m - 1, 1),
+          dateStr: '1/' + m + '/' + currentYear,
+          description: 'הומבי אשראי — ' + tenantName + ' דירה ' + aptNum,
+          amount: monthlyAmount,
+          balance: 0,
+          reference: 'הומבי',
+          fee: '',
+          channel: 'אשראי',
+          month: m,
+          year: currentYear,
+          source: 'credit',
+          creditAptNum: aptNum
+        });
+      }
+    }
+  } else {
+    // Standard transaction format
+    for (let i = headerIdx + 1; i < raw.length; i++) {
+      const row = raw[i];
+      if (!row) continue;
+      const dateVal = parseDate(row[colMap.date]);
+      if (!dateVal) continue;
+      let amount = colMap.amount >= 0 ? (parseFloat(String(row[colMap.amount] || '0').replace(/[^\d.\-]/g, '')) || 0) : 0;
+      if (amount === 0) continue;
+      amount = Math.abs(amount);
+      const desc = colMap.desc >= 0 ? String(row[colMap.desc] || '').trim() : '';
+      creditData.push({
+        date: dateVal,
+        dateStr: formatDate(dateVal),
+        description: desc,
+        amount: amount,
+        balance: 0,
+        reference: '',
+        fee: '',
+        channel: 'אשראי',
+        month: dateVal.getMonth() + 1,
+        year: dateVal.getFullYear(),
+        source: 'credit'
+      });
+    }
   }
   creditData.sort((a, b) => b.date - a.date);
 }
@@ -1144,6 +1206,12 @@ function normalizeDesc(desc) {
 }
 
 function matchTransactionToTenant(tx) {
+  // Direct match for credit transactions with known apartment number
+  if (tx.creditAptNum) {
+    const tenant = tenantsData.find(t => t.aptNum === tx.creditAptNum);
+    if (tenant) return { tenant, confidence: 100, details: 'שיוך ישיר מקובץ אשראי' };
+  }
+
   const desc = tx.description;
   let bestMatch = null;
   let bestConfidence = 0;
