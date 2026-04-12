@@ -129,6 +129,7 @@ body {
 }
 
 .upload-click-zone {
+  display: block;
   padding: 28px 28px 16px;
   cursor: pointer;
   transition: background 0.2s;
@@ -136,11 +137,11 @@ body {
 
 .upload-click-zone:hover { background: var(--bg-card-hover); }
 .upload-box:hover { border-color: var(--accent); }
+.upload-box .upload-status { margin: 0 28px 8px; }
 .upload-box.loaded { border-color: var(--success); border-style: solid; }
 .upload-box .upload-icon { font-size: 36px; margin-bottom: 10px; }
 .upload-box h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
 .upload-box p { font-size: 12px; color: var(--text-secondary); }
-.upload-box input[type="file"] { display: none; }
 
 .upload-status {
   margin-top: 10px; font-size: 12px; padding: 6px 14px;
@@ -534,13 +535,13 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
     </div>
     <div class="upload-area">
       <div class="upload-box" id="bankUploadBox">
-        <div class="upload-click-zone" onclick="document.getElementById('bankFileInput').click()">
+        <label for="bankFileInput" class="upload-click-zone">
           <div class="upload-icon">&#128179;</div>
           <h3>קובץ עובר ושב (בנק)</h3>
-          <p>העלה קובץ XLSX עדכני &mdash; ניתן לטעון בכל פעם מחדש</p>
-          <input type="file" id="bankFileInput" accept=".xlsx,.xls" onchange="handleBankUpload(event)">
-          <div id="bankUploadStatus" class="upload-status pending">לא נטען</div>
-        </div>
+          <p>לחץ כאן לבחירת קובץ XLSX מהמחשב</p>
+        </label>
+        <input type="file" id="bankFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleBankUpload(event)">
+        <div id="bankUploadStatus" class="upload-status pending">לא נטען</div>
         <div class="drive-link-area">
           <div class="drive-label">או הדבק קישור Google Sheets / Drive:</div>
           <div class="drive-link-row">
@@ -550,13 +551,13 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
         </div>
       </div>
       <div class="upload-box" id="creditUploadBox">
-        <div class="upload-click-zone" onclick="document.getElementById('creditFileInput').click()">
+        <label for="creditFileInput" class="upload-click-zone">
           <div class="upload-icon">&#128179;</div>
           <h3>קובץ חיובי אשראי</h3>
-          <p>העלה קובץ XLSX של סליקת אשראי &mdash; ניתן לטעון בכל פעם מחדש</p>
-          <input type="file" id="creditFileInput" accept=".xlsx,.xls" onchange="handleCreditUpload(event)">
-          <div id="creditUploadStatus" class="upload-status pending">לא נטען</div>
-        </div>
+          <p>לחץ כאן לבחירת קובץ XLSX מהמחשב</p>
+        </label>
+        <input type="file" id="creditFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCreditUpload(event)">
+        <div id="creditUploadStatus" class="upload-status pending">לא נטען</div>
         <div class="drive-link-area">
           <div class="drive-label">או הדבק קישור Google Sheets / Drive:</div>
           <div class="drive-link-row">
@@ -566,14 +567,14 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
         </div>
       </div>
       <div class="upload-box" id="tenantsUploadBox">
-        <div class="upload-click-zone" onclick="document.getElementById('tenantsFileInput').click()">
+        <label for="tenantsFileInput" class="upload-click-zone">
           <div class="upload-icon">&#127968;</div>
           <h3>קובץ דיירים</h3>
-          <p>העלאה חד-פעמית &mdash; הקובץ יישמר לשימוש עתידי</p>
-          <input type="file" id="tenantsFileInput" accept=".xlsx,.xls" onchange="handleTenantsUpload(event)">
-          <div id="tenantsUploadStatus" class="upload-status pending">לא נטען</div>
-          <button class="btn-clear-tenants hidden" id="clearTenantsBtn" onclick="event.stopPropagation(); clearTenants();">נקה נתוני דיירים</button>
-        </div>
+          <p>לחץ כאן לבחירת קובץ XLSX מהמחשב</p>
+        </label>
+        <input type="file" id="tenantsFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleTenantsUpload(event)">
+        <div id="tenantsUploadStatus" class="upload-status pending">לא נטען</div>
+        <button class="btn-clear-tenants hidden" id="clearTenantsBtn" onclick="clearTenants();">נקה נתוני דיירים</button>
         <div class="drive-link-area">
           <div class="drive-label">או הדבק קישור Google Sheets / Drive:</div>
           <div class="drive-link-row">
