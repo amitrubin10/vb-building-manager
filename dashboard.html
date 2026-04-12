@@ -150,6 +150,32 @@ body {
 }
 .btn-clear-tenants:hover { background: var(--danger-bg); }
 
+.drive-link-area {
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.drive-link-area .drive-label {
+  font-size: 11px; color: var(--text-muted); margin-bottom: 6px;
+}
+.drive-link-row {
+  display: flex; gap: 6px; align-items: center;
+}
+.drive-link-row input {
+  flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text-primary); padding: 6px 10px; border-radius: 6px;
+  font-family: 'Heebo', sans-serif; font-size: 11px; direction: ltr; text-align: left;
+}
+.drive-link-row input:focus { outline: none; border-color: var(--accent); }
+.drive-link-row input::placeholder { color: var(--text-muted); direction: rtl; text-align: right; }
+.btn-drive {
+  background: linear-gradient(135deg, #4285f4, #1a73e8); color: #fff;
+  border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  font-family: 'Heebo', sans-serif; font-size: 11px; font-weight: 600;
+  white-space: nowrap; transition: opacity 0.2s;
+}
+.btn-drive:hover { opacity: 0.85; }
+.btn-drive:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* KPI Cards */
 .kpi-grid {
   display: grid;
@@ -506,6 +532,13 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
         <p>העלה קובץ XLSX עדכני &mdash; ניתן לטעון בכל פעם מחדש</p>
         <input type="file" id="bankFileInput" accept=".xlsx,.xls" onchange="handleBankUpload(event)">
         <div id="bankUploadStatus" class="upload-status pending">לא נטען</div>
+        <div class="drive-link-area" onclick="event.stopPropagation()">
+          <div class="drive-label">או הדבק קישור Google Sheets / Drive:</div>
+          <div class="drive-link-row">
+            <input type="text" id="bankDriveUrl" placeholder="הדבק קישור כאן..." onclick="event.stopPropagation()">
+            <button class="btn-drive" onclick="event.stopPropagation(); fetchFromDrive('bankDriveUrl','bank')">&#9729; טען</button>
+          </div>
+        </div>
       </div>
       <div class="upload-box" id="creditUploadBox" onclick="document.getElementById('creditFileInput').click()">
         <div class="upload-icon">&#128179;</div>
@@ -513,6 +546,13 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
         <p>העלה קובץ XLSX של סליקת אשראי &mdash; ניתן לטעון בכל פעם מחדש</p>
         <input type="file" id="creditFileInput" accept=".xlsx,.xls" onchange="handleCreditUpload(event)">
         <div id="creditUploadStatus" class="upload-status pending">לא נטען</div>
+        <div class="drive-link-area" onclick="event.stopPropagation()">
+          <div class="drive-label">או הדבק קישור Google Sheets / Drive:</div>
+          <div class="drive-link-row">
+            <input type="text" id="creditDriveUrl" placeholder="הדבק קישור כאן..." onclick="event.stopPropagation()">
+            <button class="btn-drive" onclick="event.stopPropagation(); fetchFromDrive('creditDriveUrl','credit')">&#9729; טען</button>
+          </div>
+        </div>
       </div>
       <div class="upload-box" id="tenantsUploadBox" onclick="document.getElementById('tenantsFileInput').click()">
         <div class="upload-icon">&#127968;</div>
@@ -521,6 +561,13 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
         <input type="file" id="tenantsFileInput" accept=".xlsx,.xls" onchange="handleTenantsUpload(event)">
         <div id="tenantsUploadStatus" class="upload-status pending">לא נטען</div>
         <button class="btn-clear-tenants hidden" id="clearTenantsBtn" onclick="event.stopPropagation(); clearTenants();">נקה נתוני דיירים</button>
+        <div class="drive-link-area" onclick="event.stopPropagation()">
+          <div class="drive-label">או הדבק קישור Google Sheets / Drive:</div>
+          <div class="drive-link-row">
+            <input type="text" id="tenantsDriveUrl" placeholder="הדבק קישור כאן..." onclick="event.stopPropagation()">
+            <button class="btn-drive" onclick="event.stopPropagation(); fetchFromDrive('tenantsDriveUrl','tenants')">&#9729; טען</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -841,6 +888,87 @@ function handleTenantsUpload(event) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+// ==================== GOOGLE DRIVE FETCH ====================
+function extractDriveId(url) {
+  // Google Sheets: https://docs.google.com/spreadsheets/d/XXXXX/edit...
+  let m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return { type: 'sheets', id: m[1] };
+  // Google Drive file: https://drive.google.com/file/d/XXXXX/view...
+  m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return { type: 'drive', id: m[1] };
+  // Google Drive open: https://drive.google.com/open?id=XXXXX
+  m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (m) return { type: 'drive', id: m[1] };
+  // Google Sheets short: https://docs.google.com/spreadsheets/d/XXXXX
+  m = url.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return { type: 'sheets', id: m[1] };
+  return null;
+}
+
+async function fetchFromDrive(inputId, target) {
+  const urlInput = document.getElementById(inputId);
+  const url = (urlInput.value || '').trim();
+  if (!url) { alert('נא להדביק קישור Google Sheets או Drive'); return; }
+
+  const info = extractDriveId(url);
+  if (!info) { alert('קישור לא תקין. נא להדביק קישור שיתוף של Google Sheets או Google Drive.'); return; }
+
+  let fetchUrl;
+  if (info.type === 'sheets') {
+    fetchUrl = 'https://docs.google.com/spreadsheets/d/' + info.id + '/export?format=xlsx';
+  } else {
+    fetchUrl = 'https://drive.google.com/uc?export=download&id=' + info.id;
+  }
+
+  // Update status
+  const statusMap = { bank: 'bankUploadStatus', credit: 'creditUploadStatus', tenants: 'tenantsUploadStatus' };
+  const boxMap = { bank: 'bankUploadBox', credit: 'creditUploadBox', tenants: 'tenantsUploadBox' };
+  const statusEl = document.getElementById(statusMap[target]);
+  statusEl.className = 'upload-status pending';
+  statusEl.textContent = 'טוען מדרייב...';
+
+  try {
+    const resp = await fetch(fetchUrl);
+    if (!resp.ok) throw new Error('שגיאה בהורדה: ' + resp.status + '. ודא שהקובץ משותף לכל מי שיש לו את הקישור.');
+    const arrayBuffer = await resp.arrayBuffer();
+
+    const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
+
+    if (target === 'bank') {
+      parseBankData(raw);
+      statusEl.className = 'upload-status success';
+      statusEl.textContent = 'נטען מדרייב בהצלחה';
+      document.getElementById(boxMap[target]).classList.add('loaded');
+      document.getElementById('headerStatus').textContent = 'נתונים נטענו';
+    } else if (target === 'credit') {
+      // For credit, re-read without dateNF to preserve original format
+      const raw2 = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      parseCreditData(raw2);
+      statusEl.className = 'upload-status success';
+      statusEl.textContent = 'נטען מדרייב בהצלחה';
+      document.getElementById(boxMap[target]).classList.add('loaded');
+    } else if (target === 'tenants') {
+      const raw2 = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      parseTenantsData(raw2);
+      saveTenantsToStorage(raw2);
+      statusEl.className = 'upload-status success';
+      statusEl.textContent = 'נטען מדרייב ונשמר';
+      document.getElementById(boxMap[target]).classList.add('loaded');
+      document.getElementById('clearTenantsBtn').classList.remove('hidden');
+    }
+    tryRender();
+  } catch(err) {
+    statusEl.className = 'upload-status pending';
+    statusEl.textContent = 'שגיאה בטעינה';
+    const msg = err.message.includes('Failed to fetch') || err.message.includes('CORS') || err.message.includes('NetworkError')
+      ? 'לא ניתן לגשת לקובץ. ודא ש:\n1. הקובץ משותף ל"כל מי שיש לו את הקישור"\n2. אם זה Google Sheets — לחץ על שיתוף ובחר "כל מי שיש לו קישור"\n3. לחלופין, הורד את הקובץ למחשב והעלה ידנית'
+      : 'שגיאה: ' + err.message;
+    alert(msg);
+  }
 }
 
 function handleCreditUpload(event) {
