@@ -908,19 +908,19 @@ function parseCreditData(raw) {
     if (!raw[i]) continue;
     const rowStr = raw[i].map(c => String(c || '').trim());
 
-    // Check for Hombi summary format: has "דירה" and "חודשים"
+    // Check for Hombi summary format: has "דירה" and "חודשים ששולמו"
     const aptCol = rowStr.findIndex(c => c.includes('דירה'));
-    const monthsCol = rowStr.findIndex(c => c.includes('חודש'));
+    const monthsCol = rowStr.findIndex(c => c.includes('חודשים') || c.includes('חודשים ששולמו'));
     const nameCol = rowStr.findIndex(c => c.includes('שם'));
-    const amountCol = rowStr.findIndex(c => c.includes('תשלום חודשי') || c.includes('חודשי'));
+    const amountCol = rowStr.findIndex(c => c.includes('תשלום חודשי') || c.includes('סכום חודשי'));
 
-    if (aptCol >= 0 && (monthsCol >= 0 || nameCol >= 0)) {
+    if (aptCol >= 0 && monthsCol >= 0) {
       headerIdx = i;
       isHombiFormat = true;
       colMap = { apt: aptCol, name: nameCol, monthly: amountCol, months: monthsCol };
       // Find total paid column
       for (let j = 0; j < rowStr.length; j++) {
-        if (rowStr[j].includes('סה"כ') || rowStr[j].includes('שולם')) { colMap.totalPaid = j; break; }
+        if (rowStr[j].includes('סה"כ')) { colMap.totalPaid = j; break; }
       }
       break;
     }
