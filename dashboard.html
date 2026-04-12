@@ -1236,7 +1236,7 @@ function parseTenantsData(raw) {
     if (!foundApt && (h.includes('מספר דירה') || h === 'דירה')) { col.apt = j; foundApt = true; }
     else if (!foundOwner && (h.includes('שם בעל') || h.includes('שם הדייר') || (h.includes('שם') && !h.includes('שוכר')))) { col.owner = j; foundOwner = true; }
     else if (!foundPayment && (h.includes('תשלום חודשי') || h.includes('דמי ועד'))) { col.payment = j; foundPayment = true; }
-    else if (!foundPhone && (h.includes('טלפון נייד') || h.includes('נייד'))) { col.phone = j; foundPhone = true; }
+    else if (!foundPhone && (h.includes('טלפון נייד') || h === 'טלפון' || h === 'נייד' || h.includes('פלאפון')) && !h.includes('נוסף')) { col.phone = j; foundPhone = true; }
     else if (!foundRenter && h.includes('שוכר')) { col.renter = j; foundRenter = true; }
   }
 
