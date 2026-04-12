@@ -1228,13 +1228,13 @@ function parseTenantsData(raw) {
   const header = raw[0].map(c => String(c || '').trim());
   let col = { apt: 0, payment: 1, owner: 3, phone: 5, renter: 7 }; // defaults
 
-  // Try to find columns by header keywords
+  // Try to find columns by header keywords — order matters, more specific first
   for (let j = 0; j < header.length; j++) {
     const h = header[j];
-    if (h.includes('דירה') || h.includes('מספר')) col.apt = j;
-    else if (h.includes('תשלום') || h.includes('חודשי') || h.includes('סכום')) col.payment = j;
-    else if (h.includes('שם') && !h.includes('שוכר')) col.owner = j;
-    else if (h.includes('נייד') || h.includes('טלפון') && !h.includes('נוסף')) col.phone = j;
+    if (h.includes('מספר דירה') || (h === 'דירה')) col.apt = j;
+    else if (h.includes('שם בעל') || h.includes('שם הדייר') || (h.includes('שם') && !h.includes('שוכר'))) col.owner = j;
+    else if (h.includes('תשלום חודשי') || h.includes('דמי ועד')) col.payment = j;
+    else if (h.includes('טלפון נייד') || h.includes('נייד')) col.phone = j;
     else if (h.includes('שוכר')) col.renter = j;
   }
 
@@ -1675,7 +1675,7 @@ function populateFilters() {
   tenantsData.forEach(t => {
     const opt = document.createElement('option');
     opt.value = t.aptNum;
-    opt.textContent = t.aptNum + ' ' + t.ownerName;
+    opt.textContent = t.aptNum;
     aptSelect.appendChild(opt);
   });
 
