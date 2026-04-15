@@ -1640,7 +1640,12 @@ function showMappingDialog(header, col, sampleRow) {
   document.getElementById('mappingOverlay').classList.add('active');
 }
 
+let _mappingBusy = false;
+
 function confirmMapping() {
+  if (_mappingBusy) return; // Prevent double-click
+  _mappingBusy = true;
+
   // Read all select values from the dialog
   const col = {};
   document.querySelectorAll('#mappingFields select').forEach(sel => {
@@ -1648,36 +1653,51 @@ function confirmMapping() {
     col[key] = parseInt(sel.value);
   });
 
-  document.getElementById('mappingOverlay').classList.remove('active');
-
-  if (_pendingFileType === 'bank') {
-    finalizeBankParse(_pendingFileRaw, col);
-    _pendingFileRaw = null;
-    tryRender();
-  } else if (_pendingFileType === 'credit_hombi' || _pendingFileType === 'credit_standard') {
-    _pendingFileRaw._isHombi = _pendingFileType === 'credit_hombi';
-    finalizeCreditParse(_pendingFileRaw, col);
-    _pendingFileRaw = null;
-    tryRender();
-  } else if (_pendingFileType === 'tenants') {
-    if (col.apt === -1 || col.owner === -1) {
-      alert('יש לבחור לפחות את העמודות: מספר דירה, שם בעל הדירה');
-      return;
-    }
-    finalizeTenantsParse(_pendingTenantsRaw || _pendingFileRaw, col);
-    const rawToSave = _pendingTenantsRaw || _pendingFileRaw;
-    if (_pendingTenantsSaveRaw || rawToSave) {
-      saveTenantsToStorage(rawToSave);
-      document.getElementById('tenantsUploadStatus').className = 'upload-status success';
-      document.getElementById('tenantsUploadStatus').textContent = 'נטען ונשמר';
-      document.getElementById('tenantsUploadBox').classList.add('loaded');
-      document.getElementById('clearTenantsBtn').classList.remove('hidden');
-      _pendingTenantsSaveRaw = null;
-    }
-    _pendingFileRaw = null;
-    _pendingTenantsRaw = null;
-    tryRender();
+  // Validation for tenants
+  if (_pendingFileType === 'tenants' && (col.apt === -1 || col.owner === -1)) {
+    alert('יש לבחור לפחות את העמודות: מספר דירה, שם בעל הדירה');
+    _mappingBusy = false;
+    return;
   }
+
+  // Show loading state in the dialog
+  const btn = document.querySelector('.btn-map-confirm');
+  if (btn) { btn.textContent = 'טוען נתונים...'; btn.disabled = true; }
+
+  // Use setTimeout to let the UI update before heavy processing
+  setTimeout(() => {
+    try {
+      if (_pendingFileType === 'bank') {
+        finalizeBankParse(_pendingFileRaw, col);
+        _pendingFileRaw = null;
+      } else if (_pendingFileType === 'credit_hombi' || _pendingFileType === 'credit_standard') {
+        _pendingFileRaw._isHombi = _pendingFileType === 'credit_hombi';
+        finalizeCreditParse(_pendingFileRaw, col);
+        _pendingFileRaw = null;
+      } else if (_pendingFileType === 'tenants') {
+        finalizeTenantsParse(_pendingTenantsRaw || _pendingFileRaw, col);
+        const rawToSave = _pendingTenantsRaw || _pendingFileRaw;
+        if (_pendingTenantsSaveRaw || rawToSave) {
+          saveTenantsToStorage(rawToSave);
+          document.getElementById('tenantsUploadStatus').className = 'upload-status success';
+          document.getElementById('tenantsUploadStatus').textContent = 'נטען ונשמר';
+          document.getElementById('tenantsUploadBox').classList.add('loaded');
+          document.getElementById('clearTenantsBtn').classList.remove('hidden');
+          _pendingTenantsSaveRaw = null;
+        }
+        _pendingFileRaw = null;
+        _pendingTenantsRaw = null;
+        renderPricingAssignments();
+      }
+
+      document.getElementById('mappingOverlay').classList.remove('active');
+      tryRender();
+    } catch(err) {
+      alert('שגיאה בעיבוד: ' + err.message);
+    }
+    _mappingBusy = false;
+    if (btn) { btn.textContent = '\u2713 אישור'; btn.disabled = false; }
+  }, 50);
 }
 
 function cancelMapping() {
