@@ -810,6 +810,15 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
       </div>
       <div class="filters-bar">
         <div class="filter-group">
+          <label>תקופת דוח — מחודש</label>
+          <input type="month" id="dateRangeFrom" onchange="saveDateRange(); tryRender();">
+        </div>
+        <div class="filter-group">
+          <label>עד חודש</label>
+          <input type="month" id="dateRangeTo" onchange="saveDateRange(); tryRender();">
+        </div>
+        <div style="border-left:1px solid var(--border);height:40px;margin:0 6px;align-self:center;"></div>
+        <div class="filter-group">
           <label>חודש</label>
           <select id="filterMonth" onchange="applyFilters()"></select>
         </div>
@@ -1024,6 +1033,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('headerDate').textContent = new Date().toLocaleDateString('he-IL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   document.getElementById('buildingSubtitle').textContent = 'נציגות בית משותף | ' + BUILDING_NAME;
   document.title = 'דשבורד ועד בית | ' + BUILDING_NAME;
+  loadDateRange();
   loadTenantsFromStorage();
   loadBankFromStorage();
   loadCreditFromStorage();
@@ -1869,6 +1879,23 @@ function loadCreditFromStorage() {
   } catch(e) {}
 }
 
+function saveDateRange() {
+  const from = document.getElementById('dateRangeFrom').value;
+  const to = document.getElementById('dateRangeTo').value;
+  try { localStorage.setItem('vaad_daterange', JSON.stringify({ from, to })); } catch(e) {}
+}
+
+function loadDateRange() {
+  try {
+    const data = localStorage.getItem('vaad_daterange');
+    if (data) {
+      const { from, to } = JSON.parse(data);
+      if (from) document.getElementById('dateRangeFrom').value = from;
+      if (to) document.getElementById('dateRangeTo').value = to;
+    }
+  } catch(e) {}
+}
+
 function saveForecastToStorage() {
   try { localStorage.setItem('vaad_forecast', JSON.stringify(forecastData)); } catch(e) {}
 }
@@ -2150,12 +2177,14 @@ function exportSettings() {
     tenantsColMap: null,
     forecast: forecastData,
     bank: null,
-    credit: null
+    credit: null,
+    dateRange: null
   };
   try { data.tenants = JSON.parse(localStorage.getItem('vaad_tenants') || 'null'); } catch(e) {}
   try { data.tenantsColMap = JSON.parse(localStorage.getItem('vaad_col_map') || 'null'); } catch(e) {}
   try { data.bank = JSON.parse(localStorage.getItem('vaad_bank') || 'null'); } catch(e) {}
   try { data.credit = JSON.parse(localStorage.getItem('vaad_credit') || 'null'); } catch(e) {}
+  try { data.dateRange = JSON.parse(localStorage.getItem('vaad_daterange') || 'null'); } catch(e) {}
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -2208,6 +2237,11 @@ function importSettings(event) {
         localStorage.setItem('vaad_credit', JSON.stringify(data.credit));
         loadCreditFromStorage();
         imported.push('נתוני אשראי (' + creditData.length + ' תנועות)');
+      }
+      if (data.dateRange) {
+        localStorage.setItem('vaad_daterange', JSON.stringify(data.dateRange));
+        loadDateRange();
+        imported.push('חתך תאריכים');
       }
 
       // Reload tenants from storage
@@ -2566,7 +2600,19 @@ function getActiveMonths() {
   const monthSet = new Set();
   bankData.forEach(tx => monthSet.add(tx.year + '-' + String(tx.month).padStart(2, '0')));
   creditData.forEach(tx => monthSet.add(tx.year + '-' + String(tx.month).padStart(2, '0')));
-  return Array.from(monthSet).sort().map(s => {
+
+  // Apply date range filter
+  const fromEl = document.getElementById('dateRangeFrom');
+  const toEl = document.getElementById('dateRangeTo');
+  const fromVal = fromEl ? fromEl.value : '';
+  const toVal = toEl ? toEl.value : '';
+
+  let all = Array.from(monthSet).sort();
+
+  if (fromVal) all = all.filter(s => s >= fromVal);
+  if (toVal) all = all.filter(s => s <= toVal);
+
+  return all.map(s => {
     const [y, m] = s.split('-');
     return { y: parseInt(y), m: parseInt(m) };
   });
