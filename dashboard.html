@@ -716,9 +716,28 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
       <div class="pricing-tabs">
         <div class="pricing-tab active" onclick="switchPricingTab('types')">סוגי דירות ומחירים</div>
         <div class="pricing-tab" onclick="switchPricingTab('assign')">שיוך דירות לסוג</div>
+        <div class="pricing-tab" onclick="switchPricingTab('backup')">גיבוי ושחזור</div>
       </div>
       <div class="pricing-panel active" id="pricingTypesPanel"></div>
       <div class="pricing-panel" id="pricingAssignPanel"></div>
+      <div class="pricing-panel" id="pricingBackupPanel">
+        <div style="max-width:600px;margin:0 auto;text-align:center;">
+          <div style="margin-bottom:28px;">
+            <div style="font-size:36px;margin-bottom:8px;">&#128229;</div>
+            <h3 style="font-size:16px;margin-bottom:6px;">ייצוא הגדרות</h3>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">שומר את כל ההגדרות לקובץ — תמחור, שיוך דירות, נתוני דיירים, תחזית. ניתן לשלוח במייל או לשמור כגיבוי.</p>
+            <button class="btn-save-pricing" onclick="exportSettings()" style="background:var(--success);">&#8595; ייצוא הגדרות לקובץ</button>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:28px;">
+            <div style="font-size:36px;margin-bottom:8px;">&#128228;</div>
+            <h3 style="font-size:16px;margin-bottom:6px;">ייבוא הגדרות</h3>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">טוען הגדרות מקובץ גיבוי — משחזר תמחור, שיוך דירות, דיירים ותחזית. שימושי למעבר בין מחשבים או שחזור לאחר ניקוי דפדפן.</p>
+            <label for="importFileInput" class="btn-save-pricing" style="background:var(--accent);cursor:pointer;display:inline-block;">&#8593; ייבוא הגדרות מקובץ</label>
+            <input type="file" id="importFileInput" accept=".json" style="display:none;" onchange="importSettings(event)">
+          </div>
+          <div id="backupStatus" style="margin-top:20px;font-size:12px;color:var(--text-muted);"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1810,10 +1829,11 @@ function togglePricingPanel() {
 
 function switchPricingTab(tab) {
   document.querySelectorAll('.pricing-tab').forEach((el, i) => {
-    el.classList.toggle('active', (tab === 'types' && i === 0) || (tab === 'assign' && i === 1));
+    el.classList.toggle('active', (tab === 'types' && i === 0) || (tab === 'assign' && i === 1) || (tab === 'backup' && i === 2));
   });
   document.getElementById('pricingTypesPanel').classList.toggle('active', tab === 'types');
   document.getElementById('pricingAssignPanel').classList.toggle('active', tab === 'assign');
+  document.getElementById('pricingBackupPanel').classList.toggle('active', tab === 'backup');
   if (tab === 'assign') renderPricingAssignments();
 }
 
@@ -1941,6 +1961,87 @@ function savePricing() {
   renderPricingUI();
   alert('הגדרות התמחור נשמרו!');
   if (bankData.length > 0 && tenantsData.length > 0) { analyzeData(); applyFilters(); }
+}
+
+// ==================== EXPORT / IMPORT SETTINGS ====================
+function exportSettings() {
+  const data = {
+    _exportDate: new Date().toISOString(),
+    _version: '1.0',
+    _buildingName: BUILDING_NAME,
+    pricing: pricingData,
+    tenants: null,
+    tenantsColMap: null,
+    forecast: forecastData
+  };
+  try { data.tenants = JSON.parse(localStorage.getItem('vaad_tenants') || 'null'); } catch(e) {}
+  try { data.tenantsColMap = JSON.parse(localStorage.getItem('vaad_col_map') || 'null'); } catch(e) {}
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'הגדרות דשבורד - ' + BUILDING_NAME + ' - ' + new Date().toLocaleDateString('he-IL') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  document.getElementById('backupStatus').textContent = 'הגדרות יוצאו בהצלחה! ' + new Date().toLocaleTimeString('he-IL');
+  document.getElementById('backupStatus').style.color = 'var(--success)';
+}
+
+function importSettings(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data._version) throw new Error('קובץ לא תקין');
+
+      let imported = [];
+
+      if (data.pricing) {
+        pricingData = data.pricing;
+        savePricingToStorage();
+        imported.push('תמחור');
+      }
+      if (data.tenants) {
+        localStorage.setItem('vaad_tenants', JSON.stringify(data.tenants));
+        imported.push('דיירים');
+      }
+      if (data.tenantsColMap) {
+        localStorage.setItem('vaad_col_map', JSON.stringify(data.tenantsColMap));
+        imported.push('מיפוי עמודות');
+      }
+      if (data.forecast) {
+        forecastData = data.forecast;
+        saveForecastToStorage();
+        imported.push('תחזית');
+      }
+
+      // Reload tenants from storage
+      loadTenantsFromStorage();
+      renderPricingUI();
+
+      const statusEl = document.getElementById('backupStatus');
+      statusEl.textContent = 'יובאו בהצלחה: ' + imported.join(', ') + ' (' + new Date().toLocaleTimeString('he-IL') + ')';
+      statusEl.style.color = 'var(--success)';
+
+      if (bankData.length > 0 && tenantsData.length > 0) {
+        analyzeData();
+        applyFilters();
+      }
+
+      alert('ההגדרות יובאו בהצלחה!\n\n' + imported.join('\n'));
+    } catch(err) {
+      alert('שגיאה בייבוא: ' + err.message + '\n\nודא שזה קובץ JSON שיוצא מהדשבורד.');
+      document.getElementById('backupStatus').textContent = 'שגיאה בייבוא';
+      document.getElementById('backupStatus').style.color = 'var(--danger)';
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
 }
 
 // ==================== RENDER ENGINE ====================
