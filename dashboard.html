@@ -220,6 +220,90 @@ body {
 .btn-map-confirm { background: var(--accent); color: #fff; }
 .btn-map-cancel { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border) !important; }
 
+/* Pricing Settings */
+.pricing-section { margin-bottom: 28px; }
+.pricing-header {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; padding: 14px 22px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 14px; transition: all 0.3s;
+}
+.pricing-header:hover { border-color: var(--accent); }
+.pricing-header .pricing-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
+.pricing-header .pricing-arrow { transition: transform 0.3s; font-size: 14px; color: var(--text-muted); }
+.pricing-header.open .pricing-arrow { transform: rotate(180deg); }
+.pricing-header.open { border-radius: 14px 14px 0 0; }
+.pricing-body {
+  display: none; background: var(--bg-card); border: 1px solid var(--border);
+  border-top: none; border-radius: 0 0 14px 14px; padding: 20px;
+}
+.pricing-body.open { display: block; }
+.pricing-tabs { display: flex; gap: 0; margin-bottom: 18px; }
+.pricing-tab {
+  padding: 10px 24px; font-family: 'Heebo'; font-size: 13px; font-weight: 600;
+  background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text-secondary); cursor: pointer; transition: all 0.2s;
+}
+.pricing-tab:first-child { border-radius: 0 10px 10px 0; }
+.pricing-tab:last-child { border-radius: 10px 0 0 10px; border-right: none; }
+.pricing-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pricing-panel { display: none; }
+.pricing-panel.active { display: block; }
+
+.type-card {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; margin-bottom: 12px;
+}
+.type-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.type-card-header input {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary);
+  padding: 6px 12px; border-radius: 6px; font-family: 'Heebo'; font-size: 14px; font-weight: 600;
+  flex: 1;
+}
+.type-card-header .btn-del-type {
+  background: transparent; border: 1px solid var(--danger); color: var(--danger);
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-family: 'Heebo';
+}
+.type-card-header .btn-del-type:hover { background: var(--danger-bg); }
+.period-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.period-row input {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary);
+  padding: 5px 10px; border-radius: 6px; font-family: 'Heebo'; font-size: 13px;
+}
+.period-row input[type="month"] { width: 150px; direction: ltr; }
+.period-row input[type="number"] { width: 100px; direction: ltr; text-align: left; }
+.period-row .btn-del-period {
+  background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 16px; padding: 2px 6px;
+}
+.btn-add {
+  background: transparent; border: 1px dashed var(--border); color: var(--accent);
+  padding: 8px 16px; border-radius: 8px; font-family: 'Heebo'; font-size: 12px;
+  cursor: pointer; transition: all 0.2s; width: 100%;
+}
+.btn-add:hover { border-color: var(--accent); background: rgba(59,130,246,0.06); }
+.btn-save-pricing {
+  background: var(--accent); color: #fff; border: none; padding: 10px 32px;
+  border-radius: 8px; font-family: 'Heebo'; font-size: 14px; font-weight: 600;
+  cursor: pointer; margin-top: 16px;
+}
+.btn-save-pricing:hover { opacity: 0.85; }
+.assign-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.assign-table th {
+  background: #151d30; padding: 10px 14px; text-align: right; font-weight: 600;
+  color: var(--text-secondary); font-size: 11px; border-bottom: 2px solid var(--border);
+}
+.assign-table td { padding: 8px 14px; border-bottom: 1px solid rgba(42,53,80,0.5); }
+.assign-table select {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary);
+  padding: 5px 10px; border-radius: 6px; font-family: 'Heebo'; font-size: 13px; width: 100%;
+}
+.pricing-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px;
+  font-weight: 600; background: rgba(59,130,246,0.12); color: var(--accent-light);
+}
+
 /* KPI Cards */
 .kpi-grid {
   display: grid;
@@ -622,6 +706,22 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
     </div>
   </div>
 
+  <!-- Pricing Settings -->
+  <div class="pricing-section">
+    <div class="pricing-header" id="pricingHeader" onclick="togglePricingPanel()">
+      <div class="pricing-title">&#9881; הגדרות תמחור</div>
+      <span class="pricing-arrow">&#9660;</span>
+    </div>
+    <div class="pricing-body" id="pricingBody">
+      <div class="pricing-tabs">
+        <div class="pricing-tab active" onclick="switchPricingTab('types')">סוגי דירות ומחירים</div>
+        <div class="pricing-tab" onclick="switchPricingTab('assign')">שיוך דירות לסוג</div>
+      </div>
+      <div class="pricing-panel active" id="pricingTypesPanel"></div>
+      <div class="pricing-panel" id="pricingAssignPanel"></div>
+    </div>
+  </div>
+
   <!-- Main content, hidden until data loaded -->
   <div id="mainContent" class="hidden">
 
@@ -907,6 +1007,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.title = 'דשבורד ועד בית | ' + BUILDING_NAME;
   loadTenantsFromStorage();
   loadForecastFromStorage();
+  loadPricingFromStorage();
 });
 
 // ==================== FILE HANDLING ====================
@@ -1658,6 +1759,190 @@ function loadForecastFromStorage() {
   } catch(e) {}
 }
 
+// ==================== PRICING SETTINGS ====================
+let pricingData = { types: [], assignments: {} };
+
+function savePricingToStorage() {
+  try { localStorage.setItem('vaad_pricing', JSON.stringify(pricingData)); } catch(e) {}
+}
+
+function loadPricingFromStorage() {
+  try {
+    const data = localStorage.getItem('vaad_pricing');
+    if (data) pricingData = JSON.parse(data);
+  } catch(e) {}
+  renderPricingUI();
+}
+
+function getExpectedPayment(aptNum, year, month) {
+  const typeId = pricingData.assignments[aptNum];
+  if (!typeId) {
+    const tenant = tenantsData.find(t => t.aptNum === aptNum);
+    return tenant ? tenant.monthlyPayment : 0;
+  }
+  const type = pricingData.types.find(t => t.id === typeId);
+  if (!type || !type.periods || type.periods.length === 0) {
+    const tenant = tenantsData.find(t => t.aptNum === aptNum);
+    return tenant ? tenant.monthlyPayment : 0;
+  }
+  const targetKey = year + '-' + String(month).padStart(2, '0');
+  let amount = type.periods[0].amount;
+  for (const p of type.periods) {
+    if (p.from <= targetKey) amount = p.amount;
+    else break;
+  }
+  return amount;
+}
+
+function getAptTypeName(aptNum) {
+  const typeId = pricingData.assignments[aptNum];
+  if (!typeId) return '';
+  const type = pricingData.types.find(t => t.id === typeId);
+  return type ? type.name : '';
+}
+
+function togglePricingPanel() {
+  const hdr = document.getElementById('pricingHeader');
+  const body = document.getElementById('pricingBody');
+  hdr.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
+function switchPricingTab(tab) {
+  document.querySelectorAll('.pricing-tab').forEach((el, i) => {
+    el.classList.toggle('active', (tab === 'types' && i === 0) || (tab === 'assign' && i === 1));
+  });
+  document.getElementById('pricingTypesPanel').classList.toggle('active', tab === 'types');
+  document.getElementById('pricingAssignPanel').classList.toggle('active', tab === 'assign');
+  if (tab === 'assign') renderPricingAssignments();
+}
+
+function renderPricingUI() {
+  renderPricingTypes();
+  renderPricingAssignments();
+}
+
+function renderPricingTypes() {
+  const panel = document.getElementById('pricingTypesPanel');
+  let html = '';
+  pricingData.types.forEach((type, ti) => {
+    html += '<div class="type-card" data-typeid="' + type.id + '">';
+    html += '<div class="type-card-header">';
+    html += '<input type="text" value="' + (type.name || '') + '" placeholder="שם סוג דירה" data-field="typename" data-idx="' + ti + '">';
+    html += '<button class="btn-del-type" onclick="removeAptType(\'' + type.id + '\')">מחק סוג</button>';
+    html += '</div>';
+    html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;">תקופות מחיר:</div>';
+    (type.periods || []).forEach((p, pi) => {
+      html += '<div class="period-row">';
+      html += '<span style="font-size:11px;color:var(--text-muted);">מ-</span>';
+      html += '<input type="month" value="' + (p.from || '') + '" data-field="period-from" data-type="' + ti + '" data-period="' + pi + '">';
+      html += '<span style="font-size:11px;color:var(--text-muted);">סכום:</span>';
+      html += '<input type="number" value="' + (p.amount || '') + '" placeholder="0" data-field="period-amount" data-type="' + ti + '" data-period="' + pi + '">';
+      html += '<span style="font-size:11px;color:var(--text-muted);">&#8362;</span>';
+      html += '<button class="btn-del-period" onclick="removePeriod(' + ti + ',' + pi + ')">&#10005;</button>';
+      html += '</div>';
+    });
+    html += '<button class="btn-add" onclick="addPeriod(' + ti + ')" style="margin-top:6px;width:auto;padding:4px 14px;font-size:11px;">+ הוסף תקופה</button>';
+    html += '</div>';
+  });
+  html += '<button class="btn-add" onclick="addAptType()">+ הוסף סוג דירה</button>';
+  html += '<div style="text-align:center;"><button class="btn-save-pricing" onclick="savePricing()">&#10003; שמור הגדרות</button></div>';
+  panel.innerHTML = html;
+}
+
+function renderPricingAssignments() {
+  const panel = document.getElementById('pricingAssignPanel');
+  if (tenantsData.length === 0) {
+    panel.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);">יש לטעון קובץ דיירים תחילה</div>';
+    return;
+  }
+  const typeOptions = pricingData.types.map(t =>
+    '<option value="' + t.id + '">' + t.name + '</option>'
+  ).join('');
+
+  let html = '<table class="assign-table"><thead><tr><th>דירה</th><th>שם</th><th>סוג דירה</th></tr></thead><tbody>';
+  tenantsData.forEach(t => {
+    if (t.aptNum === 'מחסן ועד' || t.aptNum === 'שכירות חניה') return;
+    const currentType = pricingData.assignments[t.aptNum] || '';
+    html += '<tr>';
+    html += '<td style="text-align:center;font-weight:700;">' + t.aptNum + '</td>';
+    html += '<td>' + t.ownerName + '</td>';
+    html += '<td><select onchange="assignAptType(\'' + t.aptNum + '\',this.value)">';
+    html += '<option value="">ללא (מהקובץ: ' + t.monthlyPayment + ')</option>';
+    html += typeOptions.replace('value="' + currentType + '"', 'value="' + currentType + '" selected');
+    html += '</select></td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  panel.innerHTML = html;
+}
+
+function addAptType() {
+  pricingData.types.push({
+    id: 'type_' + Date.now(),
+    name: '',
+    periods: [{ from: '', amount: 0 }]
+  });
+  renderPricingTypes();
+}
+
+function removeAptType(typeId) {
+  if (!confirm('למחוק את הסוג הזה? דירות ששויכו אליו יאבדו את השיוך.')) return;
+  pricingData.types = pricingData.types.filter(t => t.id !== typeId);
+  for (const apt in pricingData.assignments) {
+    if (pricingData.assignments[apt] === typeId) delete pricingData.assignments[apt];
+  }
+  savePricingToStorage();
+  renderPricingUI();
+  if (bankData.length > 0 && tenantsData.length > 0) { analyzeData(); applyFilters(); }
+}
+
+function addPeriod(typeIdx) {
+  pricingData.types[typeIdx].periods.push({ from: '', amount: 0 });
+  renderPricingTypes();
+}
+
+function removePeriod(typeIdx, periodIdx) {
+  pricingData.types[typeIdx].periods.splice(periodIdx, 1);
+  renderPricingTypes();
+}
+
+function assignAptType(aptNum, typeId) {
+  if (typeId) {
+    pricingData.assignments[aptNum] = typeId;
+  } else {
+    delete pricingData.assignments[aptNum];
+  }
+  savePricingToStorage();
+  if (bankData.length > 0 && tenantsData.length > 0) { analyzeData(); applyFilters(); }
+}
+
+function savePricing() {
+  // Read all type names and periods from DOM
+  document.querySelectorAll('input[data-field="typename"]').forEach(el => {
+    const idx = parseInt(el.dataset.idx);
+    pricingData.types[idx].name = el.value.trim();
+  });
+  document.querySelectorAll('input[data-field="period-from"]').forEach(el => {
+    const ti = parseInt(el.dataset.type);
+    const pi = parseInt(el.dataset.period);
+    pricingData.types[ti].periods[pi].from = el.value;
+  });
+  document.querySelectorAll('input[data-field="period-amount"]').forEach(el => {
+    const ti = parseInt(el.dataset.type);
+    const pi = parseInt(el.dataset.period);
+    pricingData.types[ti].periods[pi].amount = parseFloat(el.value) || 0;
+  });
+  // Sort periods by date
+  pricingData.types.forEach(t => {
+    t.periods.sort((a, b) => (a.from || '').localeCompare(b.from || ''));
+  });
+  savePricingToStorage();
+  renderPricingUI();
+  alert('הגדרות התמחור נשמרו!');
+  if (bankData.length > 0 && tenantsData.length > 0) { analyzeData(); applyFilters(); }
+}
+
 // ==================== RENDER ENGINE ====================
 function tryRender() {
   if (bankData.length === 0 || tenantsData.length === 0) return;
@@ -1885,7 +2170,7 @@ function analyzeCollection() {
       });
 
       const totalPaid = incomeTxs.reduce((s, tx) => s + tx.amount, 0);
-      const expected = tenant.monthlyPayment;
+      const expected = getExpectedPayment(tenant.aptNum, month.y, month.m);
 
       let status, statusClass;
       if (totalPaid === 0) {
@@ -2175,9 +2460,12 @@ function renderCollectionTable(data) {
 
     const debtHtml = debt > 5 ? '<span class="amount-negative" style="font-weight:700;">' + formatCurrency(debt) + '</span>' : '<span style="color:var(--success);">0</span>';
 
+    const typeName = getAptTypeName(a.aptNum);
+    const typeHtml = typeName ? '<span class="pricing-badge">' + typeName + '</span> ' : '';
+
     tr.innerHTML = `
       <td><strong class="clickable-apt" onclick="openAptDrilldown('${a.aptNum}')" title="לחץ לצפייה בכרטיס דירה ${a.aptNum}">${a.aptNum}</strong></td>
-      <td>${a.tenantName}</td>
+      <td>${a.tenantName} ${typeHtml}</td>
       <td>${formatCurrency(a.monthly)}</td>
       <td>${formatCurrency(a.totalExpected)}</td>
       <td class="${a.totalPaid > 0 ? 'amount-positive' : ''}">${a.totalPaid > 0 ? formatCurrency(a.totalPaid) : '—'}</td>
