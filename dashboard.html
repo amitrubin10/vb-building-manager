@@ -3415,6 +3415,7 @@ function showIncomeTable(type) {
     txs = bankData.filter(t => t.amount > 0 && t.year === year && activeMonthKeys.has(t.year + '-' + t.month));
     title = 'הכנסות בנק ' + year;
   }
+  txs.sort((a, b) => (a.date instanceof Date && b.date instanceof Date) ? a.date - b.date : 0);
   const total = txs.reduce((s, t) => s + t.amount, 0);
   let html = '<div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">' +
     '<span style="font-size:14px;font-weight:700;">' + title + '</span>' +
