@@ -3487,12 +3487,13 @@ function showIncomeTable(type) {
   let html = '<div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">' +
     '<span style="font-size:14px;font-weight:700;">' + title + '</span>' +
     '<span style="font-size:13px;color:var(--success);font-weight:700;">' + txs.length + ' תנועות | ' + formatCurrency(total) + '</span></div>';
-  html += '<table><thead><tr><th>תאריך</th><th>תיאור</th><th>סכום</th></tr></thead><tbody>';
+  html += '<table id="incomeDrillTable"><thead><tr><th class="sortable sort-asc">תאריך</th><th class="sortable">תיאור</th><th class="sortable">סכום</th></tr></thead><tbody>';
   txs.forEach(t => {
     html += '<tr><td>' + t.dateStr + '</td><td style="white-space:normal;max-width:400px;">' + t.description + '</td><td class="amount-positive">' + formatCurrency(t.amount) + '</td></tr>';
   });
   html += '</tbody></table>';
   document.getElementById('drilldownBody').innerHTML = html;
+  makeSortable('incomeDrillTable');
 }
 
 function openExpCatDrilldown(category) {
@@ -3531,8 +3532,8 @@ function openExpCatDrilldown(category) {
     ).join('')}
   `;
 
-  let tableHtml = `<table><thead><tr>
-    <th>חודש</th><th>תאריך</th><th>תיאור תנועה</th><th>סכום</th><th>יתרה לאחר פעולה</th>
+  let tableHtml = `<table id="expCatDrillTable"><thead><tr>
+    <th class="sortable">חודש</th><th class="sortable sort-asc">תאריך</th><th class="sortable">תיאור תנועה</th><th class="sortable">סכום</th><th>יתרה לאחר פעולה</th>
   </tr></thead><tbody>`;
 
   catData.forEach(r => {
@@ -3547,6 +3548,7 @@ function openExpCatDrilldown(category) {
 
   tableHtml += '</tbody></table>';
   document.getElementById('drilldownBody').innerHTML = tableHtml;
+  makeSortable('expCatDrillTable');
   overlay.classList.add('active');
   document.body.style.overflow = 'hidden';
 }
