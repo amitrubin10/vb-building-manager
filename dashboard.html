@@ -1810,7 +1810,81 @@ function loadPricingFromStorage() {
     const data = localStorage.getItem('vaad_pricing');
     if (data) pricingData = JSON.parse(data);
   } catch(e) {}
+  // If no types defined, load defaults
+  if (!pricingData.types || pricingData.types.length === 0) {
+    loadDefaultPricing();
+  }
   renderPricingUI();
+}
+
+function loadDefaultPricing() {
+  pricingData = {
+    types: [
+      {
+        id: 'type_gan', name: 'דירות גן (1-4)',
+        periods: [
+          { from: '2025-01', amount: 565 },
+          { from: '2025-02', amount: 620 },
+          { from: '2025-12', amount: 770 }
+        ]
+      },
+      {
+        id: 'type_6rooms', name: '6 חדרים קומה 2 (5-8)',
+        periods: [
+          { from: '2025-01', amount: 510 },
+          { from: '2025-02', amount: 560 },
+          { from: '2025-12', amount: 695 }
+        ]
+      },
+      {
+        id: 'type_5rooms', name: '5 חדרים',
+        periods: [
+          { from: '2025-01', amount: 415 },
+          { from: '2025-02', amount: 455 },
+          { from: '2025-12', amount: 565 }
+        ]
+      },
+      {
+        id: 'type_floor18', name: 'קומה 18 (67-70)',
+        periods: [
+          { from: '2025-01', amount: 575 },
+          { from: '2025-02', amount: 630 },
+          { from: '2025-12', amount: 780 }
+        ]
+      },
+      {
+        id: 'type_duplex', name: 'דופלקס קומה 8 (33,36)',
+        periods: [
+          { from: '2025-01', amount: 820 },
+          { from: '2025-02', amount: 900 },
+          { from: '2025-12', amount: 1115 }
+        ]
+      },
+      {
+        id: 'type_half', name: 'חצי ועד (58,61)',
+        periods: [
+          { from: '2025-01', amount: 250 },
+          { from: '2025-12', amount: 285 },
+          { from: '2026-04', amount: 565 }
+        ]
+      }
+    ],
+    assignments: {
+      '1': 'type_gan', '2': 'type_gan', '3': 'type_gan', '4': 'type_gan',
+      '5': 'type_6rooms', '6': 'type_6rooms', '7': 'type_6rooms', '8': 'type_6rooms',
+      '33': 'type_duplex', '36': 'type_duplex',
+      '58': 'type_half', '61': 'type_half',
+      '67': 'type_floor18', '68': 'type_floor18', '69': 'type_floor18', '70': 'type_floor18'
+    }
+  };
+  // Assign all other apartments (9-70 except special ones) to 5 rooms
+  for (let i = 9; i <= 66; i++) {
+    const s = String(i);
+    if (!pricingData.assignments[s]) {
+      pricingData.assignments[s] = 'type_5rooms';
+    }
+  }
+  savePricingToStorage();
 }
 
 function getExpectedPayment(aptNum, year, month) {
