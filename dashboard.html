@@ -3226,14 +3226,14 @@ function openAptDrilldown(aptNum) {
 
   // Monthly breakdown table
   let tableHtml = '<table><thead><tr>' +
-    '<th>חודש</th><th>סכום צפוי</th><th>סכום ששולם</th><th>סטטוס</th><th>אופן תשלום</th><th>פירוט תנועות</th><th>רמת ודאות</th>' +
+    '<th>חודש</th><th>סכום צפוי</th><th>סכום ששולם</th><th>חוב חודשי</th><th>סטטוס</th><th>אופן תשלום</th><th>פירוט תנועות</th>' +
     '</tr></thead><tbody>';
 
   aptData.forEach(r => {
-    const confLevel = r.confidence >= 70 ? 'high' : r.confidence >= 45 ? 'medium' : 'low';
-    const confText = r.paid === 0 ? '-' : (r.confidence >= 70 ? 'גבוהה' : r.confidence >= 45 ? 'בינונית' : 'נמוכה');
     const pm = r.paymentMethod || '-';
     const pmClass = pm === 'אשראי' ? 'badge-info' : pm === 'העברה בנקאית' ? 'badge-success' : pm === 'משולב' ? 'badge-purple' : '';
+    const monthDebt = r.expected - r.paid;
+    const monthDebtHtml = monthDebt > 5 ? '<span class="amount-negative" style="font-weight:700;">' + formatCurrency(monthDebt) + '</span>' : '<span style="color:var(--success);">0</span>';
 
     const txDetailHtml = r.transactions.map(t => {
       const srcIcon = t.source === 'credit' ? '💳' : '🏦';
@@ -3245,10 +3245,10 @@ function openAptDrilldown(aptNum) {
       '<td><strong>' + r.monthLabel + '</strong></td>' +
       '<td>' + formatCurrency(r.expected) + '</td>' +
       '<td class="' + (r.paid > 0 ? 'amount-positive' : '') + '">' + (r.paid > 0 ? formatCurrency(r.paid) : '—') + '</td>' +
+      '<td>' + monthDebtHtml + '</td>' +
       '<td><span class="badge ' + r.statusClass + '">' + r.status + '</span></td>' +
       '<td>' + (pmClass ? '<span class="badge ' + pmClass + '">' + pm + '</span>' : '-') + '</td>' +
       '<td style="white-space:normal;max-width:350px;">' + txDetailHtml + '</td>' +
-      '<td><span class="confidence-' + confLevel + '">' + confText + (r.confidence > 0 ? ' (' + r.confidence + '%)' : '') + '</span></td>' +
       '</tr>';
   });
 
