@@ -1617,7 +1617,7 @@ function showMappingDialog(header, col, sampleRow) {
   const fields = [
     { key: 'apt', label: 'מספר דירה', required: true },
     { key: 'owner', label: 'שם בעל הדירה', required: true },
-    { key: 'payment', label: 'תשלום חודשי', required: true },
+    { key: 'payment', label: 'תשלום חודשי (אופציונלי אם הוגדר תמחור)', required: false },
     { key: 'phone', label: 'טלפון', required: false },
     { key: 'renter', label: 'שם שוכר', required: false }
   ];
@@ -1660,8 +1660,8 @@ function confirmMapping() {
     _pendingFileRaw = null;
     tryRender();
   } else if (_pendingFileType === 'tenants') {
-    if (col.apt === -1 || col.owner === -1 || col.payment === -1) {
-      alert('יש לבחור לפחות את העמודות: מספר דירה, שם בעל הדירה, תשלום חודשי');
+    if (col.apt === -1 || col.owner === -1) {
+      alert('יש לבחור לפחות את העמודות: מספר דירה, שם בעל הדירה');
       return;
     }
     finalizeTenantsParse(_pendingTenantsRaw || _pendingFileRaw, col);
