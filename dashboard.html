@@ -299,6 +299,12 @@ body {
   background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary);
   padding: 5px 10px; border-radius: 6px; font-family: 'Heebo'; font-size: 13px; width: 100%;
 }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--accent-light); }
+th.sortable::after { content: ' ⇅'; font-size: 10px; opacity: 0.4; }
+th.sortable.sort-asc::after { content: ' ▲'; opacity: 0.8; }
+th.sortable.sort-desc::after { content: ' ▼'; opacity: 0.8; }
+
 .pricing-badge {
   display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px;
   font-weight: 600; background: rgba(59,130,246,0.12); color: var(--accent-light);
@@ -914,13 +920,13 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
           <table id="collectionTable">
             <thead>
               <tr>
-                <th>מס' דירה</th>
-                <th>שם בעל הדירה</th>
-                <th>דמי ועד (חודשי)</th>
-                <th>סכום לתשלום לתקופה</th>
-                <th>סכום ששולם לתקופה</th>
-                <th>חוב לתשלום</th>
-                <th>סטטוס</th>
+                <th class="sortable sort-asc">מס' דירה</th>
+                <th class="sortable">שם בעל הדירה</th>
+                <th class="sortable">דמי ועד (חודשי)</th>
+                <th class="sortable">סכום לתשלום לתקופה</th>
+                <th class="sortable">סכום ששולם לתקופה</th>
+                <th class="sortable">חוב לתשלום</th>
+                <th class="sortable">סטטוס</th>
                 <th>אופן תשלום</th>
               </tr>
             </thead>
@@ -945,11 +951,11 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
           <table id="expensesTable">
             <thead>
               <tr>
-                <th>חודש</th>
-                <th>תאריך</th>
-                <th>תיאור תנועה</th>
-                <th>סכום</th>
-                <th>קטגוריה</th>
+                <th class="sortable">חודש</th>
+                <th class="sortable sort-asc">תאריך</th>
+                <th class="sortable">תיאור תנועה</th>
+                <th class="sortable">סכום</th>
+                <th class="sortable">קטגוריה</th>
                 <th>יתרה לאחר פעולה</th>
               </tr>
             </thead>
@@ -974,10 +980,10 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
           <table id="allTxTable">
             <thead>
               <tr>
-                <th>תאריך</th>
-                <th>תיאור</th>
-                <th>סכום</th>
-                <th>יתרה</th>
+                <th class="sortable sort-asc">תאריך</th>
+                <th class="sortable">תיאור</th>
+                <th class="sortable">סכום</th>
+                <th class="sortable">יתרה</th>
                 <th>אסמכתה</th>
                 <th>ערוץ ביצוע</th>
               </tr>
@@ -2932,6 +2938,7 @@ function renderCollectionTable(data) {
     `;
     tbody.appendChild(tr);
   });
+  makeSortable('collectionTable');
 }
 
 function renderExpensesTable(data) {
@@ -2939,7 +2946,12 @@ function renderExpensesTable(data) {
   tbody.innerHTML = '';
   document.getElementById('expensesCount').textContent = data.length + ' רשומות';
 
-  data.forEach(r => {
+  const sorted = [...data].sort((a, b) => {
+    const da = new Date(a.date.split('/').reverse().join('-'));
+    const db = new Date(b.date.split('/').reverse().join('-'));
+    return da - db;
+  });
+  sorted.forEach(r => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${r.monthLabel}</td>
@@ -2951,6 +2963,7 @@ function renderExpensesTable(data) {
     `;
     tbody.appendChild(tr);
   });
+  makeSortable('expensesTable');
 }
 
 function renderAllTxTable(data) {
@@ -2958,7 +2971,9 @@ function renderAllTxTable(data) {
   tbody.innerHTML = '';
   document.getElementById('allTxCount').textContent = data.length + ' רשומות';
 
-  data.forEach(tx => {
+  // Sort by date ascending by default
+  const sorted = [...data].sort((a, b) => a.date - b.date);
+  sorted.forEach(tx => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${tx.dateStr}</td>
@@ -2970,6 +2985,7 @@ function renderAllTxTable(data) {
     `;
     tbody.appendChild(tr);
   });
+  makeSortable('allTxTable');
 }
 
 // ==================== CHARTS ====================
@@ -3194,6 +3210,57 @@ function updateForecast(key, field, value) {
   let sm = null, sy = null;
   if (monthFilter !== 'all') { const p = monthFilter.split('-'); sy = parseInt(p[0]); sm = parseInt(p[1]); }
   renderCharts(sm, sy);
+}
+
+// ==================== TABLE SORTING ====================
+function makeSortable(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const headers = table.querySelectorAll('thead th.sortable');
+  headers.forEach(th => {
+    th.addEventListener('click', () => {
+      const colIdx = Array.from(th.parentNode.children).indexOf(th);
+      const tbody = table.querySelector('tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      const isAsc = th.classList.contains('sort-asc');
+
+      // Remove sort classes from all headers
+      headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+      th.classList.add(isAsc ? 'sort-desc' : 'sort-asc');
+
+      rows.sort((a, b) => {
+        const aText = a.children[colIdx] ? a.children[colIdx].textContent.trim() : '';
+        const bText = b.children[colIdx] ? b.children[colIdx].textContent.trim() : '';
+        // Try numeric
+        const aNum = parseFloat(aText.replace(/[^\d.\-]/g, ''));
+        const bNum = parseFloat(bText.replace(/[^\d.\-]/g, ''));
+        if (!isNaN(aNum) && !isNaN(bNum)) return isAsc ? bNum - aNum : aNum - bNum;
+        // Try date (D/M/YYYY)
+        const aDate = parseSortDate(aText);
+        const bDate = parseSortDate(bText);
+        if (aDate && bDate) return isAsc ? bDate - aDate : aDate - bDate;
+        // String
+        return isAsc ? bText.localeCompare(aText, 'he') : aText.localeCompare(bText, 'he');
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+}
+
+function parseSortDate(text) {
+  const m = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
+  // Try MONTH_NAME YEAR format
+  for (const [name, num] of Object.entries({
+    'ינואר':1,'פברואר':2,'מרץ':3,'אפריל':4,'מאי':5,'יוני':6,
+    'יולי':7,'אוגוסט':8,'ספטמבר':9,'אוקטובר':10,'נובמבר':11,'דצמבר':12
+  })) {
+    if (text.includes(name)) {
+      const ym = text.match(/(\d{4})/);
+      if (ym) return new Date(parseInt(ym[1]), num - 1, 1);
+    }
+  }
+  return null;
 }
 
 // ==================== UTILITIES ====================
