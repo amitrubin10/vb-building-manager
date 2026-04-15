@@ -662,7 +662,7 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
 
 <div class="header">
   <div class="header-title">
-    <div class="logo">VB</div>
+    <div class="logo"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/><path d="M9 9h.01"/><path d="M15 9h.01"/><path d="M9 13h.01"/><path d="M15 13h.01"/></svg></div>
     <div>
       <div style="display:flex;align-items:baseline;gap:10px;">
         <h1 style="margin:0;">ועד בית</h1>
@@ -1065,7 +1065,7 @@ const EXPENSE_CATEGORIES = {
 document.addEventListener('DOMContentLoaded', () => {
   const loadStatus = document.getElementById('loadingStatus');
   document.getElementById('headerDate').textContent = new Date().toLocaleDateString('he-IL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  document.getElementById('buildingSubtitle').textContent = 'נציגות בית משותף | ' + BUILDING_NAME;
+  document.getElementById('buildingSubtitle').textContent = BUILDING_NAME;
   document.title = 'דשבורד ועד בית | ' + BUILDING_NAME;
 
   // Use setTimeout to allow the loading screen to render before heavy work
@@ -1936,7 +1936,7 @@ function editBuildingName() {
   if (newName && newName.trim()) {
     BUILDING_NAME = newName.trim();
     try { localStorage.setItem('vaad_building_name', BUILDING_NAME); } catch(e) {}
-    document.getElementById('buildingSubtitle').textContent = 'נציגות בית משותף | ' + BUILDING_NAME;
+    document.getElementById('buildingSubtitle').textContent = BUILDING_NAME;
     document.title = 'דשבורד ועד בית | ' + BUILDING_NAME;
   }
 }
@@ -2320,7 +2320,7 @@ function importSettings(event) {
       if (data.buildingName) {
         BUILDING_NAME = data.buildingName;
         localStorage.setItem('vaad_building_name', BUILDING_NAME);
-        document.getElementById('buildingSubtitle').textContent = 'נציגות בית משותף | ' + BUILDING_NAME;
+        document.getElementById('buildingSubtitle').textContent = BUILDING_NAME;
         document.title = 'דשבורד ועד בית | ' + BUILDING_NAME;
         imported.push('שם בניין');
       }
