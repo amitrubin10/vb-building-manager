@@ -3340,7 +3340,6 @@ function openIncomeDrilldown() {
 
   const byYear = {};
   incomeTxs.forEach(t => { byYear[t.year] = (byYear[t.year] || 0) + t.amount; });
-  creditIncome.forEach(t => { byYear[t.year] = (byYear[t.year] || 0) + t.amount; });
 
   _incomeDrillData = { all: incomeTxs, vaad: vaadIncome, groau: groauIncome, other: otherIncome, credit: creditIncome, byYear, reconcileDiff };
 
@@ -3366,7 +3365,7 @@ function openIncomeDrilldown() {
       '<div class="stat-label">הכנסות אחרות (בנק)</div><div class="stat-value" style="color:var(--warning)">' + formatCurrency(otherIncome.reduce((s,t)=>s+t.amount,0)) + '</div></div>' +
     Object.keys(byYear).sort().map(y =>
       '<div class="drilldown-stat" style="' + ss + '" onclick="showIncomeTable(\'year_' + y + '\')">' +
-        '<div class="stat-label">סה"כ ' + y + '</div><div class="stat-value amount-positive" style="font-size:18px;">' + formatCurrency(byYear[y]) + '</div></div>'
+        '<div class="stat-label">סה"כ ' + y + ' (בנק)</div><div class="stat-value amount-positive" style="font-size:18px;">' + formatCurrency(byYear[y]) + '</div></div>'
     ).join('');
 
   showIncomeTable('all');
@@ -3413,9 +3412,8 @@ function showIncomeTable(type) {
   else if (type.startsWith('year_')) {
     const year = parseInt(type.split('_')[1]);
     const activeMonthKeys = new Set(getActiveMonths().map(m => m.y + '-' + m.m));
-    txs = [...bankData.filter(t => t.amount > 0 && t.year === year && activeMonthKeys.has(t.year + '-' + t.month)),
-           ...creditData.filter(t => t.year === year && activeMonthKeys.has(t.year + '-' + t.month))];
-    title = 'כל ההכנסות ' + year;
+    txs = bankData.filter(t => t.amount > 0 && t.year === year && activeMonthKeys.has(t.year + '-' + t.month));
+    title = 'הכנסות בנק ' + year;
   }
   const total = txs.reduce((s, t) => s + t.amount, 0);
   let html = '<div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">' +
