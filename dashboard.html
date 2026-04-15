@@ -840,11 +840,11 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
       <div class="filters-bar">
         <div class="filter-group">
           <label>תקופת דוח — מחודש</label>
-          <input type="month" id="dateRangeFrom" onchange="saveDateRange(); tryRender();">
+          <select id="dateRangeFrom" onchange="saveDateRange(); tryRender();"></select>
         </div>
         <div class="filter-group">
           <label>עד חודש</label>
-          <input type="month" id="dateRangeTo" onchange="saveDateRange(); tryRender();">
+          <select id="dateRangeTo" onchange="saveDateRange(); tryRender();"></select>
         </div>
         <div style="border-left:1px solid var(--border);height:40px;margin:0 6px;align-self:center;"></div>
         <div class="filter-group">
@@ -2644,18 +2644,22 @@ function categorizeExpense(desc) {
 }
 
 // ==================== FILTERS ====================
-function getActiveMonths() {
+function getAllRawMonths() {
+  // All months from data, unfiltered
   const monthSet = new Set();
   bankData.forEach(tx => monthSet.add(tx.year + '-' + String(tx.month).padStart(2, '0')));
   creditData.forEach(tx => monthSet.add(tx.year + '-' + String(tx.month).padStart(2, '0')));
+  return Array.from(monthSet).sort();
+}
+
+function getActiveMonths() {
+  let all = getAllRawMonths();
 
   // Apply date range filter
   const fromEl = document.getElementById('dateRangeFrom');
   const toEl = document.getElementById('dateRangeTo');
   const fromVal = fromEl ? fromEl.value : '';
   const toVal = toEl ? toEl.value : '';
-
-  let all = Array.from(monthSet).sort();
 
   if (fromVal) all = all.filter(s => s >= fromVal);
   if (toVal) all = all.filter(s => s <= toVal);
@@ -2667,6 +2671,34 @@ function getActiveMonths() {
 }
 
 function populateFilters() {
+  // Populate date range dropdowns with ALL available months (unfiltered)
+  const rawMonths = getAllRawMonths();
+  const fromSelect = document.getElementById('dateRangeFrom');
+  const toSelect = document.getElementById('dateRangeTo');
+  const savedFrom = fromSelect.value;
+  const savedTo = toSelect.value;
+
+  fromSelect.innerHTML = '<option value="">הכל (התחלה)</option>';
+  toSelect.innerHTML = '<option value="">הכל (סוף)</option>';
+  rawMonths.forEach(s => {
+    const [y, m] = s.split('-');
+    const label = MONTHS_HEB[parseInt(m)] + ' ' + y;
+    fromSelect.innerHTML += '<option value="' + s + '">' + label + '</option>';
+    toSelect.innerHTML += '<option value="' + s + '">' + label + '</option>';
+  });
+  // Restore saved date range
+  if (savedFrom) fromSelect.value = savedFrom;
+  if (savedTo) toSelect.value = savedTo;
+  try {
+    const dr = localStorage.getItem('vaad_daterange');
+    if (dr) {
+      const { from, to } = JSON.parse(dr);
+      if (from && !savedFrom) fromSelect.value = from;
+      if (to && !savedTo) toSelect.value = to;
+    }
+  } catch(e) {}
+
+  // Now get filtered months for the month filter dropdown
   const months = getActiveMonths();
   const monthSelect = document.getElementById('filterMonth');
   monthSelect.innerHTML = '<option value="all">כל החודשים</option>';
@@ -2676,7 +2708,6 @@ function populateFilters() {
     opt.textContent = MONTHS_HEB[m.m] + ' ' + m.y;
     monthSelect.appendChild(opt);
   });
-  // Default to all months
   monthSelect.value = 'all';
 
   const aptSelect = document.getElementById('filterApt');
