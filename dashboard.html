@@ -2645,11 +2645,13 @@ function categorizeExpense(desc) {
 
 // ==================== FILTERS ====================
 function getAllRawMonths() {
-  // All months from data, unfiltered
+  // All months from data, capped at current month
   const monthSet = new Set();
   bankData.forEach(tx => monthSet.add(tx.year + '-' + String(tx.month).padStart(2, '0')));
   creditData.forEach(tx => monthSet.add(tx.year + '-' + String(tx.month).padStart(2, '0')));
-  return Array.from(monthSet).sort();
+  const now = new Date();
+  const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  return Array.from(monthSet).filter(s => s <= currentMonth).sort();
 }
 
 function getActiveMonths() {
