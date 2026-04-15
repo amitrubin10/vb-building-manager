@@ -3317,6 +3317,11 @@ function openAptDrilldown(aptNum) {
 // Income drilldown data (cached for tab switching)
 let _incomeDrillData = {};
 
+function isGroauTx(tx) {
+  const d = (tx.description || '').toLowerCase();
+  return d.includes('גרואו') || d.includes('פיימ') || d.includes('grow') || d.includes('payment');
+}
+
 function openIncomeDrilldown() {
   const overlay = document.getElementById('drilldownOverlay');
   document.getElementById('drilldownTitle').textContent = 'פירוט הכנסות';
@@ -3324,29 +3329,43 @@ function openIncomeDrilldown() {
 
   const activeMonthKeys = new Set(getActiveMonths().map(m => m.y + '-' + m.m));
   const incomeTxs = bankData.filter(t => t.amount > 0 && activeMonthKeys.has(t.year + '-' + t.month));
-  const vaadIncome = incomeTxs.filter(t => { const m = matchTransactionToTenant(t); return m; });
-  const otherIncome = incomeTxs.filter(t => { const m = matchTransactionToTenant(t); return !m; });
+  const vaadIncome = incomeTxs.filter(t => !isGroauTx(t) && matchTransactionToTenant(t));
+  const groauIncome = incomeTxs.filter(t => isGroauTx(t));
+  const otherIncome = incomeTxs.filter(t => !isGroauTx(t) && !matchTransactionToTenant(t));
   const creditIncome = creditData.filter(t => activeMonthKeys.has(t.year + '-' + t.month));
+
+  const groauTotal = groauIncome.reduce((s,t)=>s+t.amount,0);
+  const creditTotal = creditIncome.reduce((s,t)=>s+t.amount,0);
+  const reconcileDiff = groauTotal - creditTotal;
+
   const byYear = {};
   incomeTxs.forEach(t => { byYear[t.year] = (byYear[t.year] || 0) + t.amount; });
   creditIncome.forEach(t => { byYear[t.year] = (byYear[t.year] || 0) + t.amount; });
 
-  _incomeDrillData = { all: incomeTxs, vaad: vaadIncome, other: otherIncome, credit: creditIncome, byYear };
+  _incomeDrillData = { all: incomeTxs, vaad: vaadIncome, groau: groauIncome, other: otherIncome, credit: creditIncome, byYear, reconcileDiff };
 
-  const statStyle = 'cursor:pointer;transition:opacity 0.2s;';
+  const ss = 'cursor:pointer;transition:opacity 0.2s;';
   const totalIncome = incomeTxs.reduce((s, t) => s + t.amount, 0);
 
+  const reconColor = Math.abs(reconcileDiff) < 1 ? 'var(--success)' : 'var(--danger)';
+  const reconText = Math.abs(reconcileDiff) < 1 ? 'התאמה מלאה!' : 'פער: ' + formatCurrency(reconcileDiff);
+
   document.getElementById('drilldownSummary').innerHTML =
-    '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'all\')">' +
+    '<div class="drilldown-stat" style="' + ss + '" onclick="showIncomeTable(\'all\')">' +
       '<div class="stat-label">סה"כ הכנסות (בנק)</div><div class="stat-value amount-positive">' + formatCurrency(totalIncome) + '</div></div>' +
-    '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'vaad\')">' +
+    '<div class="drilldown-stat" style="' + ss + '" onclick="showIncomeTable(\'vaad\')">' +
       '<div class="stat-label">דמי ועד (בנק)</div><div class="stat-value" style="color:var(--accent-light)">' + formatCurrency(vaadIncome.reduce((s,t)=>s+t.amount,0)) + '</div></div>' +
-    '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'other\')">' +
+    '<div class="drilldown-stat" style="' + ss + '" onclick="showIncomeTable(\'groau\')">' +
+      '<div class="stat-label">גרואו פיימ (סליקה)</div><div class="stat-value" style="color:var(--purple)">' + formatCurrency(groauTotal) + '</div></div>' +
+    '<div class="drilldown-stat" style="' + ss + '" onclick="showIncomeTable(\'credit\')">' +
+      '<div class="stat-label">הכנסות אשראי (קובץ)</div><div class="stat-value" style="color:var(--info)">' + formatCurrency(creditTotal) + '</div></div>' +
+    '<div class="drilldown-stat" style="' + ss + '" onclick="showIncomeTable(\'reconcile\')">' +
+      '<div class="stat-label">התאמת סליקה</div><div class="stat-value" style="color:' + reconColor + ';font-size:14px;">' + reconText + '</div>' +
+      '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">גרואו בנק מול קובץ אשראי</div></div>' +
+    '<div class="drilldown-stat" style="' + ss + '" onclick="showIncomeTable(\'other\')">' +
       '<div class="stat-label">הכנסות אחרות (בנק)</div><div class="stat-value" style="color:var(--warning)">' + formatCurrency(otherIncome.reduce((s,t)=>s+t.amount,0)) + '</div></div>' +
-    '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'credit\')">' +
-      '<div class="stat-label">הכנסות אשראי</div><div class="stat-value" style="color:var(--info)">' + formatCurrency(creditIncome.reduce((s,t)=>s+t.amount,0)) + '</div></div>' +
     Object.keys(byYear).sort().map(y =>
-      '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'year_' + y + '\')">' +
+      '<div class="drilldown-stat" style="' + ss + '" onclick="showIncomeTable(\'year_' + y + '\')">' +
         '<div class="stat-label">סה"כ ' + y + '</div><div class="stat-value amount-positive" style="font-size:18px;">' + formatCurrency(byYear[y]) + '</div></div>'
     ).join('');
 
@@ -3358,10 +3377,39 @@ function openIncomeDrilldown() {
 function showIncomeTable(type) {
   let txs = [];
   let title = '';
+  let extraHtml = '';
   if (type === 'all') { txs = _incomeDrillData.all; title = 'כל ההכנסות (בנק)'; }
-  else if (type === 'vaad') { txs = _incomeDrillData.vaad; title = 'דמי ועד (בנק)'; }
+  else if (type === 'vaad') { txs = _incomeDrillData.vaad; title = 'דמי ועד (העברות בנקאיות)'; }
+  else if (type === 'groau') { txs = _incomeDrillData.groau; title = 'גרואו פיימ — העברות סליקת אשראי לחשבון'; }
   else if (type === 'other') { txs = _incomeDrillData.other; title = 'הכנסות אחרות (בנק)'; }
-  else if (type === 'credit') { txs = _incomeDrillData.credit; title = 'הכנסות אשראי'; }
+  else if (type === 'credit') { txs = _incomeDrillData.credit; title = 'הכנסות מקובץ אשראי (הומבי)'; }
+  else if (type === 'reconcile') {
+    // Show side by side comparison
+    const groau = _incomeDrillData.groau;
+    const credit = _incomeDrillData.credit;
+    const gTotal = groau.reduce((s,t)=>s+t.amount,0);
+    const cTotal = credit.reduce((s,t)=>s+t.amount,0);
+    const diff = _incomeDrillData.reconcileDiff;
+    const ok = Math.abs(diff) < 1;
+    let html = '<div style="padding:20px;text-align:center;">' +
+      '<div style="font-size:16px;font-weight:700;margin-bottom:16px;">התאמת סליקה — גרואו פיימ מול קובץ אשראי</div>' +
+      '<div style="display:flex;gap:20px;justify-content:center;flex-wrap:wrap;">' +
+      '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;min-width:200px;">' +
+        '<div style="font-size:12px;color:var(--text-secondary);">גרואו פיימ (בנק)</div>' +
+        '<div style="font-size:24px;font-weight:700;color:var(--purple);">' + formatCurrency(gTotal) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);">' + groau.length + ' תנועות</div></div>' +
+      '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;min-width:200px;">' +
+        '<div style="font-size:12px;color:var(--text-secondary);">קובץ אשראי</div>' +
+        '<div style="font-size:24px;font-weight:700;color:var(--info);">' + formatCurrency(cTotal) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);">' + credit.length + ' תנועות</div></div>' +
+      '<div style="background:var(--bg-card);border:2px solid ' + (ok ? 'var(--success)' : 'var(--danger)') + ';border-radius:12px;padding:20px;min-width:200px;">' +
+        '<div style="font-size:12px;color:var(--text-secondary);">פער</div>' +
+        '<div style="font-size:24px;font-weight:700;color:' + (ok ? 'var(--success)' : 'var(--danger)') + ';">' + (ok ? 'התאמה מלאה!' : formatCurrency(diff)) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);">' + (ok ? 'אין הפרש' : (diff > 0 ? 'בנק גבוה מאשראי' : 'אשראי גבוה מבנק')) + '</div></div>' +
+      '</div></div>';
+    document.getElementById('drilldownBody').innerHTML = html;
+    return;
+  }
   else if (type.startsWith('year_')) {
     const year = parseInt(type.split('_')[1]);
     const activeMonthKeys = new Set(getActiveMonths().map(m => m.y + '-' + m.m));
