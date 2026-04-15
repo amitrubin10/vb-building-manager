@@ -130,18 +130,18 @@ body {
 
 .upload-click-zone {
   display: block;
-  padding: 28px 28px 16px;
+  padding: 14px 16px 10px;
   cursor: pointer;
   transition: background 0.2s;
 }
 
 .upload-click-zone:hover { background: var(--bg-card-hover); }
 .upload-box:hover { border-color: var(--accent); }
-.upload-box .upload-status { margin: 0 28px 8px; }
+.upload-box .upload-status { margin: 0 16px 6px; font-size: 11px; padding: 4px 10px; }
 .upload-box.loaded { border-color: var(--success); border-style: solid; }
-.upload-box .upload-icon { font-size: 36px; margin-bottom: 10px; }
-.upload-box h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-.upload-box p { font-size: 12px; color: var(--text-secondary); }
+.upload-box .upload-icon { font-size: 22px; margin-bottom: 4px; }
+.upload-box h3 { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.upload-box p { font-size: 11px; color: var(--text-secondary); }
 
 .upload-status {
   margin-top: 10px; font-size: 12px; padding: 6px 14px;
@@ -159,7 +159,7 @@ body {
 .btn-clear-tenants:hover { background: var(--danger-bg); }
 
 .drive-link-area {
-  padding: 10px 20px 16px;
+  padding: 8px 14px 10px;
   border-top: 1px solid var(--border);
 }
 .drive-link-area .drive-label {
@@ -665,7 +665,7 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
     <div class="logo">VB</div>
     <div>
       <h1>דשבורד ועד בית</h1>
-      <div class="subtitle" id="buildingSubtitle">נציגות בית משותף</div>
+      <div class="subtitle" id="buildingSubtitle" style="cursor:pointer;" onclick="editBuildingName()" title="לחץ לשינוי שם הבניין">נציגות בית משותף</div>
     </div>
   </div>
   <div class="header-info">
@@ -788,8 +788,8 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
         </div>
         <div class="kpi-card">
           <div class="kpi-stripe" style="background:var(--gradient-green);"></div>
-          <div class="kpi-label">סה"כ הכנסות מתחילת השנה</div>
-          <div class="kpi-value" id="kpiTotalIncome">--</div>
+          <div class="kpi-label">סה"כ הכנסות</div>
+          <div class="kpi-value" id="kpiTotalIncome" style="cursor:pointer;" onclick="openIncomeDrilldown()">--</div>
           <div class="kpi-sub" id="kpiTotalIncomeSub"></div>
         </div>
         <div class="kpi-card">
@@ -1038,7 +1038,8 @@ let forecastData = {};
 let charts = {};
 
 // ==================== BUILDING CONFIG (change for different buildings) ====================
-const BUILDING_NAME = 'הרב משורר ישעיהו 6';
+let BUILDING_NAME = 'הרב משורר ישעיהו 6';
+try { const bn = localStorage.getItem('vaad_building_name'); if (bn) BUILDING_NAME = bn; } catch(e) {}
 
 const MONTHS_HEB = ['', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 
@@ -1927,6 +1928,16 @@ function loadCreditFromStorage() {
   } catch(e) {}
 }
 
+function editBuildingName() {
+  const newName = prompt('הזן שם בניין:', BUILDING_NAME);
+  if (newName && newName.trim()) {
+    BUILDING_NAME = newName.trim();
+    try { localStorage.setItem('vaad_building_name', BUILDING_NAME); } catch(e) {}
+    document.getElementById('buildingSubtitle').textContent = 'נציגות בית משותף | ' + BUILDING_NAME;
+    document.title = 'דשבורד ועד בית | ' + BUILDING_NAME;
+  }
+}
+
 function saveDateRange() {
   const from = document.getElementById('dateRangeFrom').value;
   const to = document.getElementById('dateRangeTo').value;
@@ -2208,6 +2219,14 @@ function savePricing() {
   pricingData.types.forEach(t => {
     t.periods.sort((a, b) => (a.from || '').localeCompare(b.from || ''));
   });
+  // Save pricing history (keep last 3)
+  try {
+    let history = JSON.parse(localStorage.getItem('vaad_pricing_history') || '[]');
+    history.unshift({ date: new Date().toISOString(), data: JSON.parse(JSON.stringify(pricingData)) });
+    if (history.length > 3) history = history.slice(0, 3);
+    localStorage.setItem('vaad_pricing_history', JSON.stringify(history));
+  } catch(e) {}
+
   savePricingToStorage();
   renderPricingUI();
   alert('הגדרות התמחור נשמרו!');
@@ -2219,7 +2238,7 @@ function exportSettings() {
   const data = {
     _exportDate: new Date().toISOString(),
     _version: '1.0',
-    _buildingName: BUILDING_NAME,
+    buildingName: BUILDING_NAME,
     pricing: pricingData,
     tenants: null,
     tenantsColMap: null,
@@ -2233,6 +2252,7 @@ function exportSettings() {
   try { data.bank = JSON.parse(localStorage.getItem('vaad_bank') || 'null'); } catch(e) {}
   try { data.credit = JSON.parse(localStorage.getItem('vaad_credit') || 'null'); } catch(e) {}
   try { data.dateRange = JSON.parse(localStorage.getItem('vaad_daterange') || 'null'); } catch(e) {}
+  try { data.pricingHistory = JSON.parse(localStorage.getItem('vaad_pricing_history') || 'null'); } catch(e) {}
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -2290,6 +2310,16 @@ function importSettings(event) {
         localStorage.setItem('vaad_daterange', JSON.stringify(data.dateRange));
         loadDateRange();
         imported.push('חתך תאריכים');
+      }
+      if (data.pricingHistory) {
+        localStorage.setItem('vaad_pricing_history', JSON.stringify(data.pricingHistory));
+      }
+      if (data.buildingName) {
+        BUILDING_NAME = data.buildingName;
+        localStorage.setItem('vaad_building_name', BUILDING_NAME);
+        document.getElementById('buildingSubtitle').textContent = 'נציגות בית משותף | ' + BUILDING_NAME;
+        document.title = 'דשבורד ועד בית | ' + BUILDING_NAME;
+        imported.push('שם בניין');
       }
 
       // Reload tenants from storage
@@ -2786,11 +2816,19 @@ function renderKPIs(filteredCollection, filteredExpenses, selMonth, selYear) {
   document.getElementById('kpiBankBalance').textContent = formatCurrency(latestBalance);
   document.getElementById('kpiBankBalanceDate').textContent = 'נכון ל-' + latestDate;
 
-  // Total income/expenses from all data
-  const totalIncome = bankData.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-  const totalExpenses = bankData.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  // Total income/expenses from all data (within active months)
+  const activeMonthKeys = new Set(getActiveMonths().map(m => m.y + '-' + m.m));
+  const filteredBank = bankData.filter(t => activeMonthKeys.has(t.year + '-' + t.month));
+  const totalIncome = filteredBank.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const totalExpenses = filteredBank.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+
+  // Income by year
+  const incomeByYear = {};
+  filteredBank.filter(t => t.amount > 0).forEach(t => { incomeByYear[t.year] = (incomeByYear[t.year] || 0) + t.amount; });
+  const yearBreakdown = Object.keys(incomeByYear).sort().map(y => y + ': ' + formatCurrency(incomeByYear[y])).join(' | ');
+
   document.getElementById('kpiTotalIncome').textContent = formatCurrency(totalIncome);
-  document.getElementById('kpiTotalIncomeSub').textContent = bankData.filter(t => t.amount > 0).length + ' תנועות';
+  document.getElementById('kpiTotalIncomeSub').innerHTML = yearBreakdown || (filteredBank.filter(t => t.amount > 0).length + ' תנועות');
   document.getElementById('kpiTotalExpenses').textContent = formatCurrency(totalExpenses);
   document.getElementById('kpiTotalExpensesSub').textContent = bankData.filter(t => t.amount < 0).length + ' תנועות';
   document.getElementById('kpiTotalTx').textContent = bankData.length.toLocaleString('he-IL');
@@ -3268,6 +3306,52 @@ function openAptDrilldown(aptNum) {
   });
 
   tableHtml += '</tbody></table>';
+  document.getElementById('drilldownBody').innerHTML = tableHtml;
+  overlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function openIncomeDrilldown() {
+  const overlay = document.getElementById('drilldownOverlay');
+  document.getElementById('drilldownTitle').textContent = 'פירוט הכנסות';
+  document.getElementById('drilldownSubtitle').textContent = 'כל ההכנסות לתקופת הדוח';
+
+  const activeMonthKeys = new Set(getActiveMonths().map(m => m.y + '-' + m.m));
+  const incomeTxs = bankData.filter(t => t.amount > 0 && activeMonthKeys.has(t.year + '-' + t.month));
+  const totalIncome = incomeTxs.reduce((s, t) => s + t.amount, 0);
+
+  // Categorize: vaad payments vs other
+  const vaadIncome = incomeTxs.filter(t => { const m = matchTransactionToTenant(t); return m; });
+  const otherIncome = incomeTxs.filter(t => { const m = matchTransactionToTenant(t); return !m; });
+  const vaadTotal = vaadIncome.reduce((s, t) => s + t.amount, 0);
+  const otherTotal = otherIncome.reduce((s, t) => s + t.amount, 0);
+
+  // Credit income
+  const creditIncome = creditData.filter(t => activeMonthKeys.has(t.year + '-' + t.month));
+  const creditTotal = creditIncome.reduce((s, t) => s + t.amount, 0);
+
+  // By year
+  const byYear = {};
+  incomeTxs.forEach(t => { byYear[t.year] = (byYear[t.year] || 0) + t.amount; });
+  creditIncome.forEach(t => { byYear[t.year] = (byYear[t.year] || 0) + t.amount; });
+
+  document.getElementById('drilldownSummary').innerHTML =
+    '<div class="drilldown-stat"><div class="stat-label">סה"כ הכנסות (בנק)</div><div class="stat-value amount-positive">' + formatCurrency(totalIncome) + '</div></div>' +
+    '<div class="drilldown-stat"><div class="stat-label">דמי ועד (בנק)</div><div class="stat-value" style="color:var(--accent-light)">' + formatCurrency(vaadTotal) + '</div></div>' +
+    '<div class="drilldown-stat"><div class="stat-label">הכנסות אחרות (בנק)</div><div class="stat-value" style="color:var(--warning)">' + formatCurrency(otherTotal) + '</div></div>' +
+    '<div class="drilldown-stat"><div class="stat-label">הכנסות אשראי</div><div class="stat-value" style="color:var(--info)">' + formatCurrency(creditTotal) + '</div></div>' +
+    Object.keys(byYear).sort().map(y =>
+      '<div class="drilldown-stat"><div class="stat-label">סה"כ ' + y + '</div><div class="stat-value amount-positive" style="font-size:18px;">' + formatCurrency(byYear[y]) + '</div></div>'
+    ).join('');
+
+  // Table of other (non-vaad) income
+  let tableHtml = '<div style="padding:8px 16px;font-size:13px;font-weight:700;color:var(--text-secondary);border-bottom:1px solid var(--border);">הכנסות שלא זוהו כדמי ועד (בנק)</div>';
+  tableHtml += '<table><thead><tr><th>תאריך</th><th>תיאור</th><th>סכום</th></tr></thead><tbody>';
+  otherIncome.forEach(t => {
+    tableHtml += '<tr><td>' + t.dateStr + '</td><td style="white-space:normal;max-width:400px;">' + t.description + '</td><td class="amount-positive">' + formatCurrency(t.amount) + '</td></tr>';
+  });
+  tableHtml += '</tbody></table>';
+
   document.getElementById('drilldownBody').innerHTML = tableHtml;
   overlay.classList.add('active');
   document.body.style.overflow = 'hidden';
