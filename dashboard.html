@@ -664,7 +664,8 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
   <div class="header-title">
     <div class="logo">VB</div>
     <div>
-      <h1>דשבורד ועד בית</h1>
+      <h1>ועד בית</h1>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:-2px;margin-bottom:2px;">הפתרון החכם לניהול הבניין</div>
       <div class="subtitle" id="buildingSubtitle" style="cursor:pointer;" onclick="editBuildingName()" title="לחץ לשינוי שם הבניין">נציגות בית משותף</div>
     </div>
   </div>
@@ -3311,50 +3312,71 @@ function openAptDrilldown(aptNum) {
   document.body.style.overflow = 'hidden';
 }
 
+// Income drilldown data (cached for tab switching)
+let _incomeDrillData = {};
+
 function openIncomeDrilldown() {
   const overlay = document.getElementById('drilldownOverlay');
   document.getElementById('drilldownTitle').textContent = 'פירוט הכנסות';
-  document.getElementById('drilldownSubtitle').textContent = 'כל ההכנסות לתקופת הדוח';
+  document.getElementById('drilldownSubtitle').textContent = 'לחץ על כל חלון למעלה לצפייה בפירוט';
 
   const activeMonthKeys = new Set(getActiveMonths().map(m => m.y + '-' + m.m));
   const incomeTxs = bankData.filter(t => t.amount > 0 && activeMonthKeys.has(t.year + '-' + t.month));
-  const totalIncome = incomeTxs.reduce((s, t) => s + t.amount, 0);
-
-  // Categorize: vaad payments vs other
   const vaadIncome = incomeTxs.filter(t => { const m = matchTransactionToTenant(t); return m; });
   const otherIncome = incomeTxs.filter(t => { const m = matchTransactionToTenant(t); return !m; });
-  const vaadTotal = vaadIncome.reduce((s, t) => s + t.amount, 0);
-  const otherTotal = otherIncome.reduce((s, t) => s + t.amount, 0);
-
-  // Credit income
   const creditIncome = creditData.filter(t => activeMonthKeys.has(t.year + '-' + t.month));
-  const creditTotal = creditIncome.reduce((s, t) => s + t.amount, 0);
-
-  // By year
   const byYear = {};
   incomeTxs.forEach(t => { byYear[t.year] = (byYear[t.year] || 0) + t.amount; });
   creditIncome.forEach(t => { byYear[t.year] = (byYear[t.year] || 0) + t.amount; });
 
+  _incomeDrillData = { all: incomeTxs, vaad: vaadIncome, other: otherIncome, credit: creditIncome, byYear };
+
+  const statStyle = 'cursor:pointer;transition:opacity 0.2s;';
+  const totalIncome = incomeTxs.reduce((s, t) => s + t.amount, 0);
+
   document.getElementById('drilldownSummary').innerHTML =
-    '<div class="drilldown-stat"><div class="stat-label">סה"כ הכנסות (בנק)</div><div class="stat-value amount-positive">' + formatCurrency(totalIncome) + '</div></div>' +
-    '<div class="drilldown-stat"><div class="stat-label">דמי ועד (בנק)</div><div class="stat-value" style="color:var(--accent-light)">' + formatCurrency(vaadTotal) + '</div></div>' +
-    '<div class="drilldown-stat"><div class="stat-label">הכנסות אחרות (בנק)</div><div class="stat-value" style="color:var(--warning)">' + formatCurrency(otherTotal) + '</div></div>' +
-    '<div class="drilldown-stat"><div class="stat-label">הכנסות אשראי</div><div class="stat-value" style="color:var(--info)">' + formatCurrency(creditTotal) + '</div></div>' +
+    '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'all\')">' +
+      '<div class="stat-label">סה"כ הכנסות (בנק)</div><div class="stat-value amount-positive">' + formatCurrency(totalIncome) + '</div></div>' +
+    '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'vaad\')">' +
+      '<div class="stat-label">דמי ועד (בנק)</div><div class="stat-value" style="color:var(--accent-light)">' + formatCurrency(vaadIncome.reduce((s,t)=>s+t.amount,0)) + '</div></div>' +
+    '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'other\')">' +
+      '<div class="stat-label">הכנסות אחרות (בנק)</div><div class="stat-value" style="color:var(--warning)">' + formatCurrency(otherIncome.reduce((s,t)=>s+t.amount,0)) + '</div></div>' +
+    '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'credit\')">' +
+      '<div class="stat-label">הכנסות אשראי</div><div class="stat-value" style="color:var(--info)">' + formatCurrency(creditIncome.reduce((s,t)=>s+t.amount,0)) + '</div></div>' +
     Object.keys(byYear).sort().map(y =>
-      '<div class="drilldown-stat"><div class="stat-label">סה"כ ' + y + '</div><div class="stat-value amount-positive" style="font-size:18px;">' + formatCurrency(byYear[y]) + '</div></div>'
+      '<div class="drilldown-stat" style="' + statStyle + '" onclick="showIncomeTable(\'year_' + y + '\')">' +
+        '<div class="stat-label">סה"כ ' + y + '</div><div class="stat-value amount-positive" style="font-size:18px;">' + formatCurrency(byYear[y]) + '</div></div>'
     ).join('');
 
-  // Table of other (non-vaad) income
-  let tableHtml = '<div style="padding:8px 16px;font-size:13px;font-weight:700;color:var(--text-secondary);border-bottom:1px solid var(--border);">הכנסות שלא זוהו כדמי ועד (בנק)</div>';
-  tableHtml += '<table><thead><tr><th>תאריך</th><th>תיאור</th><th>סכום</th></tr></thead><tbody>';
-  otherIncome.forEach(t => {
-    tableHtml += '<tr><td>' + t.dateStr + '</td><td style="white-space:normal;max-width:400px;">' + t.description + '</td><td class="amount-positive">' + formatCurrency(t.amount) + '</td></tr>';
-  });
-  tableHtml += '</tbody></table>';
-
-  document.getElementById('drilldownBody').innerHTML = tableHtml;
+  showIncomeTable('all');
   overlay.classList.add('active');
   document.body.style.overflow = 'hidden';
+}
+
+function showIncomeTable(type) {
+  let txs = [];
+  let title = '';
+  if (type === 'all') { txs = _incomeDrillData.all; title = 'כל ההכנסות (בנק)'; }
+  else if (type === 'vaad') { txs = _incomeDrillData.vaad; title = 'דמי ועד (בנק)'; }
+  else if (type === 'other') { txs = _incomeDrillData.other; title = 'הכנסות אחרות (בנק)'; }
+  else if (type === 'credit') { txs = _incomeDrillData.credit; title = 'הכנסות אשראי'; }
+  else if (type.startsWith('year_')) {
+    const year = parseInt(type.split('_')[1]);
+    const activeMonthKeys = new Set(getActiveMonths().map(m => m.y + '-' + m.m));
+    txs = [...bankData.filter(t => t.amount > 0 && t.year === year && activeMonthKeys.has(t.year + '-' + t.month)),
+           ...creditData.filter(t => t.year === year && activeMonthKeys.has(t.year + '-' + t.month))];
+    title = 'כל ההכנסות ' + year;
+  }
+  const total = txs.reduce((s, t) => s + t.amount, 0);
+  let html = '<div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">' +
+    '<span style="font-size:14px;font-weight:700;">' + title + '</span>' +
+    '<span style="font-size:13px;color:var(--success);font-weight:700;">' + txs.length + ' תנועות | ' + formatCurrency(total) + '</span></div>';
+  html += '<table><thead><tr><th>תאריך</th><th>תיאור</th><th>סכום</th></tr></thead><tbody>';
+  txs.forEach(t => {
+    html += '<tr><td>' + t.dateStr + '</td><td style="white-space:normal;max-width:400px;">' + t.description + '</td><td class="amount-positive">' + formatCurrency(t.amount) + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('drilldownBody').innerHTML = html;
 }
 
 function openExpCatDrilldown(category) {
