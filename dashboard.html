@@ -1025,8 +1025,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('buildingSubtitle').textContent = 'נציגות בית משותף | ' + BUILDING_NAME;
   document.title = 'דשבורד ועד בית | ' + BUILDING_NAME;
   loadTenantsFromStorage();
+  loadBankFromStorage();
+  loadCreditFromStorage();
   loadForecastFromStorage();
   loadPricingFromStorage();
+  tryRender();
 });
 
 // ==================== FILE HANDLING ====================
@@ -1285,6 +1288,7 @@ function finalizeBankParse(raw, col) {
     });
   }
   bankData.sort((a, b) => b.date - a.date);
+  saveBankToStorage();
   document.getElementById('bankUploadStatus').className = 'upload-status success';
   document.getElementById('bankUploadStatus').textContent = 'נטען בהצלחה (' + bankData.length + ' תנועות)';
   document.getElementById('bankUploadBox').classList.add('loaded');
@@ -1402,6 +1406,7 @@ function finalizeCreditParse(raw, col) {
     }
   }
   creditData.sort((a, b) => b.date - a.date);
+  saveCreditToStorage();
   document.getElementById('creditUploadStatus').className = 'upload-status success';
   document.getElementById('creditUploadStatus').textContent = 'נטען בהצלחה (' + creditData.length + ' תנועות)';
   document.getElementById('creditUploadBox').classList.add('loaded');
@@ -1787,6 +1792,46 @@ function clearTenants() {
   document.getElementById('mainContent').classList.add('hidden');
 }
 
+function saveBankToStorage() {
+  try {
+    // Convert Date objects to ISO strings for JSON serialization
+    const toSave = bankData.map(tx => ({...tx, date: tx.date instanceof Date ? tx.date.toISOString() : tx.date}));
+    localStorage.setItem('vaad_bank', JSON.stringify(toSave));
+  } catch(e) { /* localStorage might be full */ }
+}
+
+function loadBankFromStorage() {
+  try {
+    const data = localStorage.getItem('vaad_bank');
+    if (data) {
+      bankData = JSON.parse(data).map(tx => ({...tx, date: new Date(tx.date)}));
+      document.getElementById('bankUploadStatus').className = 'upload-status success';
+      document.getElementById('bankUploadStatus').textContent = 'נטען מזיכרון (' + bankData.length + ' תנועות)';
+      document.getElementById('bankUploadBox').classList.add('loaded');
+      document.getElementById('headerStatus').textContent = 'נתונים נטענו';
+    }
+  } catch(e) {}
+}
+
+function saveCreditToStorage() {
+  try {
+    const toSave = creditData.map(tx => ({...tx, date: tx.date instanceof Date ? tx.date.toISOString() : tx.date}));
+    localStorage.setItem('vaad_credit', JSON.stringify(toSave));
+  } catch(e) {}
+}
+
+function loadCreditFromStorage() {
+  try {
+    const data = localStorage.getItem('vaad_credit');
+    if (data) {
+      creditData = JSON.parse(data).map(tx => ({...tx, date: new Date(tx.date)}));
+      document.getElementById('creditUploadStatus').className = 'upload-status success';
+      document.getElementById('creditUploadStatus').textContent = 'נטען מזיכרון (' + creditData.length + ' תנועות)';
+      document.getElementById('creditUploadBox').classList.add('loaded');
+    }
+  } catch(e) {}
+}
+
 function saveForecastToStorage() {
   try { localStorage.setItem('vaad_forecast', JSON.stringify(forecastData)); } catch(e) {}
 }
@@ -2066,10 +2111,14 @@ function exportSettings() {
     pricing: pricingData,
     tenants: null,
     tenantsColMap: null,
-    forecast: forecastData
+    forecast: forecastData,
+    bank: null,
+    credit: null
   };
   try { data.tenants = JSON.parse(localStorage.getItem('vaad_tenants') || 'null'); } catch(e) {}
   try { data.tenantsColMap = JSON.parse(localStorage.getItem('vaad_col_map') || 'null'); } catch(e) {}
+  try { data.bank = JSON.parse(localStorage.getItem('vaad_bank') || 'null'); } catch(e) {}
+  try { data.credit = JSON.parse(localStorage.getItem('vaad_credit') || 'null'); } catch(e) {}
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -2113,6 +2162,16 @@ function importSettings(event) {
         saveForecastToStorage();
         imported.push('תחזית');
       }
+      if (data.bank) {
+        localStorage.setItem('vaad_bank', JSON.stringify(data.bank));
+        loadBankFromStorage();
+        imported.push('נתוני בנק (' + bankData.length + ' תנועות)');
+      }
+      if (data.credit) {
+        localStorage.setItem('vaad_credit', JSON.stringify(data.credit));
+        loadCreditFromStorage();
+        imported.push('נתוני אשראי (' + creditData.length + ' תנועות)');
+      }
 
       // Reload tenants from storage
       loadTenantsFromStorage();
@@ -2122,10 +2181,7 @@ function importSettings(event) {
       statusEl.textContent = 'יובאו בהצלחה: ' + imported.join(', ') + ' (' + new Date().toLocaleTimeString('he-IL') + ')';
       statusEl.style.color = 'var(--success)';
 
-      if (bankData.length > 0 && tenantsData.length > 0) {
-        analyzeData();
-        applyFilters();
-      }
+      tryRender();
 
       alert('ההגדרות יובאו בהצלחה!\n\n' + imported.join('\n'));
     } catch(err) {
