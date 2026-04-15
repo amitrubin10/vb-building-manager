@@ -3198,6 +3198,20 @@ function openAptDrilldown(aptNum) {
       ' ' + tenant.phone + '</a>';
   }
 
+  // Calculate debt per year
+  const debtByYear = {};
+  aptData.forEach(r => {
+    const yearDebt = r.expected - r.paid;
+    if (yearDebt > 0) {
+      debtByYear[r.year] = (debtByYear[r.year] || 0) + yearDebt;
+    }
+  });
+  const debtYearsHtml = Object.keys(debtByYear).sort().map(y =>
+    '<div style="display:flex;justify-content:space-between;font-size:12px;margin-top:4px;">' +
+    '<span style="color:var(--text-secondary);">' + y + ':</span>' +
+    '<span class="amount-negative" style="font-weight:600;">' + formatCurrency(debtByYear[y]) + '</span></div>'
+  ).join('') || '<div style="font-size:12px;color:var(--success);margin-top:4px;">אין חוב</div>';
+
   document.getElementById('drilldownSummary').innerHTML = `
     <div class="drilldown-stat">
       <div class="stat-label">סה"כ שולם</div>
@@ -3208,8 +3222,9 @@ function openAptDrilldown(aptNum) {
       <div class="stat-value" style="color:var(--accent-light)">${formatCurrency(totalExpected)}</div>
     </div>
     <div class="drilldown-stat">
-      <div class="stat-label">חוב</div>
-      <div class="stat-value" style="color:${debt > 5 ? 'var(--danger)' : 'var(--success)'}">${debt > 5 ? formatCurrency(debt) : '0'}</div>
+      <div class="stat-label">סה"כ חוב</div>
+      <div class="stat-value" style="color:${debt > 5 ? 'var(--danger)' : 'var(--success)'}; margin-bottom:2px;">${debt > 5 ? formatCurrency(debt) : '0'}</div>
+      ${debtYearsHtml}
     </div>
     <div class="drilldown-stat">
       <div class="stat-label">חודשים ששילם</div>
