@@ -803,8 +803,8 @@ tbody tr:hover { background: rgba(59,130,246,0.04); }
         </div>
         <div class="kpi-card">
           <div class="kpi-stripe" style="background:var(--gradient-red);"></div>
-          <div class="kpi-label">סה"כ הוצאות מתחילת השנה</div>
-          <div class="kpi-value" id="kpiTotalExpenses">--</div>
+          <div class="kpi-label">סה"כ הוצאות</div>
+          <div class="kpi-value" id="kpiTotalExpenses" style="cursor:pointer;" onclick="openExpensesDrilldown()">--</div>
           <div class="kpi-sub" id="kpiTotalExpensesSub"></div>
         </div>
         <div class="kpi-card">
@@ -2838,8 +2838,11 @@ function renderKPIs(filteredCollection, filteredExpenses, selMonth, selYear) {
 
   document.getElementById('kpiTotalIncome').textContent = formatCurrency(totalIncome);
   document.getElementById('kpiTotalIncomeSub').innerHTML = yearBreakdown || (filteredBank.filter(t => t.amount > 0).length + ' תנועות');
+  const expensesByYear = {};
+  filteredBank.filter(t => t.amount < 0).forEach(t => { expensesByYear[t.year] = (expensesByYear[t.year] || 0) + Math.abs(t.amount); });
+  const expYearBreakdown = Object.keys(expensesByYear).sort().map(y => y + ': ' + formatCurrency(expensesByYear[y])).join(' | ');
   document.getElementById('kpiTotalExpenses').textContent = formatCurrency(totalExpenses);
-  document.getElementById('kpiTotalExpensesSub').textContent = bankData.filter(t => t.amount < 0).length + ' תנועות';
+  document.getElementById('kpiTotalExpensesSub').innerHTML = expYearBreakdown || (filteredBank.filter(t => t.amount < 0).length + ' תנועות');
   document.getElementById('kpiTotalTx').textContent = bankData.length.toLocaleString('he-IL');
 
   // Monthly KPIs
@@ -3494,6 +3497,86 @@ function showIncomeTable(type) {
   html += '</tbody></table>';
   document.getElementById('drilldownBody').innerHTML = html;
   makeSortable('incomeDrillTable');
+}
+
+// Expenses drilldown data
+let _expDrillData = {};
+
+function openExpensesDrilldown() {
+  const overlay = document.getElementById('drilldownOverlay');
+  document.getElementById('drilldownTitle').textContent = 'פירוט הוצאות';
+  document.getElementById('drilldownSubtitle').textContent = 'לחץ על כל חלון למעלה לצפייה בפירוט';
+
+  const activeMonthKeys = new Set(getActiveMonths().map(m => m.y + '-' + m.m));
+  const expTxs = bankData.filter(t => t.amount < 0 && activeMonthKeys.has(t.year + '-' + t.month));
+  const totalExp = expTxs.reduce((s, t) => s + Math.abs(t.amount), 0);
+
+  // By category
+  const byCat = {};
+  expTxs.forEach(t => {
+    const cat = categorizeExpense(t.description);
+    if (!byCat[cat]) byCat[cat] = [];
+    byCat[cat].push(t);
+  });
+
+  // By year
+  const byYear = {};
+  expTxs.forEach(t => { byYear[t.year] = (byYear[t.year] || 0) + Math.abs(t.amount); });
+
+  _expDrillData = { all: expTxs, byCat, byYear };
+
+  const ss = 'cursor:pointer;transition:opacity 0.2s;';
+
+  let summaryHtml =
+    '<div class="drilldown-stat" style="' + ss + '" onclick="showExpDrillTable(\'all\')">' +
+      '<div class="stat-label">סה"כ הוצאות</div><div class="stat-value amount-negative">' + formatCurrency(totalExp) + '</div></div>';
+
+  // Category cards
+  for (const [cat, txs] of Object.entries(byCat).sort((a,b) => b[1].reduce((s,t)=>s+Math.abs(t.amount),0) - a[1].reduce((s,t)=>s+Math.abs(t.amount),0))) {
+    const catTotal = txs.reduce((s, t) => s + Math.abs(t.amount), 0);
+    summaryHtml += '<div class="drilldown-stat" style="' + ss + '" onclick="showExpDrillTable(\'cat_' + cat + '\')">' +
+      '<div class="stat-label">' + cat + '</div><div class="stat-value amount-negative" style="font-size:16px;">' + formatCurrency(catTotal) + '</div>' +
+      '<div style="font-size:10px;color:var(--text-muted);">' + txs.length + ' תנועות</div></div>';
+  }
+
+  // Year cards
+  for (const y of Object.keys(byYear).sort()) {
+    summaryHtml += '<div class="drilldown-stat" style="' + ss + '" onclick="showExpDrillTable(\'year_' + y + '\')">' +
+      '<div class="stat-label">סה"כ ' + y + '</div><div class="stat-value amount-negative" style="font-size:18px;">' + formatCurrency(byYear[y]) + '</div></div>';
+  }
+
+  document.getElementById('drilldownSummary').innerHTML = summaryHtml;
+  showExpDrillTable('all');
+  overlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function showExpDrillTable(type) {
+  let txs = [];
+  let title = '';
+  if (type === 'all') { txs = _expDrillData.all; title = 'כל ההוצאות'; }
+  else if (type.startsWith('cat_')) {
+    const cat = type.substring(4);
+    txs = _expDrillData.byCat[cat] || [];
+    title = 'הוצאות: ' + cat;
+  } else if (type.startsWith('year_')) {
+    const year = parseInt(type.split('_')[1]);
+    txs = _expDrillData.all.filter(t => t.year === year);
+    title = 'הוצאות ' + year;
+  }
+  txs.sort((a, b) => a.date - b.date);
+  const total = txs.reduce((s, t) => s + Math.abs(t.amount), 0);
+  let html = '<div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">' +
+    '<span style="font-size:14px;font-weight:700;">' + title + '</span>' +
+    '<span style="font-size:13px;color:var(--danger);font-weight:700;">' + txs.length + ' תנועות | ' + formatCurrency(total) + '</span></div>';
+  html += '<table id="expDrillTable"><thead><tr><th class="sortable sort-asc">תאריך</th><th class="sortable">תיאור</th><th class="sortable">סכום</th><th class="sortable">קטגוריה</th></tr></thead><tbody>';
+  txs.forEach(t => {
+    const cat = categorizeExpense(t.description);
+    html += '<tr><td>' + t.dateStr + '</td><td style="white-space:normal;max-width:400px;">' + t.description + '</td><td class="amount-negative">' + formatCurrency(Math.abs(t.amount)) + '</td><td><span class="badge badge-purple">' + cat + '</span></td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('drilldownBody').innerHTML = html;
+  makeSortable('expDrillTable');
 }
 
 function openExpCatDrilldown(category) {
