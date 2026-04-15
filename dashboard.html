@@ -2196,7 +2196,7 @@ function importSettings(event) {
 
 // ==================== RENDER ENGINE ====================
 function tryRender() {
-  if (bankData.length === 0 || tenantsData.length === 0) return;
+  if ((bankData.length === 0 && creditData.length === 0) || tenantsData.length === 0) return;
   // Merge bank + credit into allIncomeData (positive transactions for matching)
   allIncomeData = [
     ...bankData.filter(tx => tx.amount > 0).map(tx => ({...tx, source: tx.source || 'bank'})),
@@ -2528,6 +2528,7 @@ function categorizeExpense(desc) {
 function getActiveMonths() {
   const monthSet = new Set();
   bankData.forEach(tx => monthSet.add(tx.year + '-' + String(tx.month).padStart(2, '0')));
+  creditData.forEach(tx => monthSet.add(tx.year + '-' + String(tx.month).padStart(2, '0')));
   return Array.from(monthSet).sort().map(s => {
     const [y, m] = s.split('-');
     return { y: parseInt(y), m: parseInt(m) };
