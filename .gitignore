@@ -1,0 +1,67 @@
+# =================================================================
+# .gitignore for vb-building-manager
+# =================================================================
+# Repo holds only project files (HTML + docs).
+# User's data files, working data, and dev scripts are excluded.
+
+# Claude Code working directory
+.claude/
+
+# Data files (user's actual building data — should NOT be committed)
+*.xlsx
+*.xls
+*.csv
+
+# JSON exports/backups (sensitive financial data)
+*.json
+!package.json
+!package-lock.json
+
+# Backup files
+dashboard-backup*.html
+*-backup-*.html
+*-backup-*.md
+*backup*
+
+# Python utility scripts (one-off analysis tools, not project code)
+*.py
+
+# Data folders (timestamped data dumps, scanned receipts, etc.)
+010125-130426/
+*-עותק/
+PIC/
+‏‏010125-130426 - עותק/
+
+# Misc Hebrew-named data files (auto-generated outputs)
+דוח*.xlsx
+הומבי*.xlsx
+עובר*.xlsx
+‏‏עובר*.xlsx
+‏‏הומבי*.xlsx
+‏‏דוח*.xlsx
+ההגדרות*
+
+# Logo variants (keep only the one in screenshots)
+vb-logo.png
+vb-logo.png1
+
+# Random Windows screenshots (Hebrew "לכידה" = capture)
+לכידה*.PNG
+לכידה*.png
+‏‏לכידה*.PNG
+Capture*.PNG
+Capture*.png
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Lock files for any future tooling
+node_modules/
